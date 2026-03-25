@@ -37,100 +37,8 @@ def main():
     inject_global_styles()
     render_sidebar()
     render_brand_header()
-
-    metrics = get_dashboard_metrics()
-    render_section("Executive Overview", "KAH Dashboard", "A premium internal command center for international prospecting, live mockups and outreach.")
-    cols = st.columns(5)
-    with cols[0]:
-        render_metric_card("Total prospects", str(metrics["total"]), "Live database")
-    with cols[1]:
-        render_metric_card("High potential", str(metrics["filtered"]), "Qualified pipeline")
-    with cols[2]:
-        render_metric_card("Contacted", str(metrics["contacted"]), "Outreach activity")
-    with cols[3]:
-        render_metric_card("Conversion rate", f"{metrics['conversion_rate']}%", "Won vs contacted")
-    with cols[4]:
-        render_metric_card("Pipeline value", metrics["estimated_revenue"], "Top 10 by priority")
-
     render_automation_center()
-    show_manual_tools = st.toggle("Show manual/debug tools", value=False)
-    if not show_manual_tools:
-        return
-
-    render_search_section()
-    render_section("Search Diagnostics", "Observability", "Queries, providers and raw candidate counts for the latest collection run.")
-    render_search_diagnostics()
-
-    render_section("Lead Intelligence", "Filter Console", "Review the active pipeline with premium market tags, deployment status and outreach readiness.")
-    prospects, selected_prospects = render_lead_console()
-    if not prospects:
-        st.info("No prospects found. Launch a search to start building the pipeline.")
-        return
-
-    export_cols = st.columns(2)
-    with export_cols[0]:
-        if st.button("Export CSV", use_container_width=True):
-            ExportService().export_leads("csv")
-            st.success("CSV export created.")
-    with export_cols[1]:
-        if st.button("Export Excel", use_container_width=True):
-            ExportService().export_leads("xlsx")
-            st.success("Excel export created.")
-
-    render_section("Sender Identity", "KAH.DIGITAL Outreach", "Professional sender identity, signature and mockup quality settings used across emails, follow-ups and exports.")
-    render_sender_identity_preview()
-
-    render_section("Outreach Studio", "Email & Mockup", "Review the selected lead with branded deployment controls, localized pricing and ready-to-send messaging.")
-    preview_pool = selected_prospects or prospects
-    prospect = resolve_preview_prospect(preview_pool)
-    render_prospect_summary(prospect, f"preview_{prospect.id}")
-    notes_data = parse_notes(prospect.notes)
-    lang = st.selectbox("Preview language", ["fr", "en"], index=0 if (prospect.email_language or "fr") == "fr" else 1)
-    outreach_asset = st.selectbox("Outreach asset", ["Primary email", "Short email", "Follow-up J+2", "Follow-up J+5", "Final follow-up J+10", "SMS", "Call script", "Contact form", "Social DM"])
-    subject, body, html_body = build_outreach_preview(prospect, notes_data, lang, outreach_asset)
-
-    preview_cols = st.columns([1, 1.2])
-    with preview_cols[0]:
-        render_key_value_card("Email Context", [
-            ("Language", prospect.email_language or "N/A"),
-            ("Price", format_price_range(prospect.estimated_price_min, prospect.estimated_price_max, prospect.country)),
-            ("Deployment", get_mockup_indicator(prospect.mockup_status)),
-            ("Mockup quality", get_mockup_quality_level()),
-            ("Mockup URL", prospect.mockup_url or "Unavailable"),
-            ("Recommended channel", notes_data.get("recommended_channel", "N/A")),
-            ("Selected outreach", prospect.selected_outreach_channel or "N/A"),
-            ("Outreach status", prospect.outreach_status or "N/A"),
-            ("Preferred social", notes_data.get("preferred_social_channel", "N/A")),
-            ("Contact form", notes_data.get("contact_form_url", "Unavailable")),
-            ("Instagram", notes_data.get("instagram_url", "Unavailable")),
-            ("Facebook", notes_data.get("facebook_url", "Unavailable")),
-            ("Recipient", prospect.email or "No email"),
-            ("Send status", get_send_indicator(prospect.send_status)),
-            ("First sent", format_datetime_label(prospect.first_sent_at)),
-            ("Last attempt", format_datetime_label(prospect.last_attempt_at)),
-            ("Attempts", str(prospect.send_attempts or 0)),
-            ("Last error", prospect.last_send_error or "None"),
-        ])
-    with preview_cols[1]:
-        st.text_input("Subject", value=subject, key=f"subject_{prospect.id}")
-        st.text_area("Email body", value=body, height=340, key=f"body_{prospect.id}")
-        if html_body:
-            with st.expander("HTML email preview", expanded=False):
-                components.html(html_body, height=620, scrolling=True)
-    if is_public_mockup_url(prospect.mockup_url):
-        with st.expander("Live mockup preview", expanded=False):
-            components.iframe(prospect.mockup_url, height=720, scrolling=True)
-    render_alternative_outreach_panel(prospect, notes_data)
-
-    render_section("Send Outreach", "Direct Send Controls", "Send directly from the dashboard with safe defaults, confirmation gates, test mode and live result tracking.")
-    render_send_panel(prospects, selected_prospects, prospect, subject, body, html_body)
-
-    if st.session_state.get("last_send_summary"):
-        summary = st.session_state["last_send_summary"]
-        st.caption(f"Last send run: selected={summary.get('selected', 0)} | sent={summary.get('sent', 0)} | failed={summary.get('failed', 0)} | skipped={summary.get('skipped', 0)} | simulated={summary.get('simulated', 0)}")
-        results_df = pd.DataFrame(summary.get("results", []))
-        if not results_df.empty:
-            st.dataframe(results_df, use_container_width=True)
+    render_manual_debug_mode()
 
 
 def render_simple_auto_outreach_flow():
@@ -196,97 +104,88 @@ def render_automation_center():
     scheduler_service = SchedulerService()
     report_service = ReportService()
     status = scheduler_service.get_auto_schedule_status()
+    report_rows = report_service.list_reports(limit=20)
+    latest_report = report_service.load_report(report_rows[0]["path"]) if report_rows else None
+    latest_summary = latest_report.get("summary", {}) if latest_report else {}
+    report_status = "READY" if status.get("last_report_path") else "PENDING"
 
-    render_section("Automation", "Autonomous Outreach Mode", "The system runs every 2 days, searches leads, routes email before SMS, skips duplicates, and saves reports.")
-    status_cols = st.columns(5)
+    render_section("Automation", "Autonomous Outreach Monitor", "Monitor the autonomous engine, review recent runs, inspect reports and adjust the schedule.")
+    status_cols = st.columns(6)
     with status_cols[0]:
-        render_metric_card("Automation", "ON" if status.get("enabled") else "OFF", "Schedule flag")
+        render_metric_card("Automation", "ON" if status.get("enabled") else "OFF", "Enabled or disabled")
     with status_cols[1]:
-        render_metric_card("Scheduler", "RUNNING" if status.get("scheduler_running") else "STOPPED", "Background worker")
+        render_metric_card("Schedule", status.get("cron_expression", settings.AUTO_MODE_CRON), "Cron expression")
     with status_cols[2]:
         render_metric_card("Next run", format_datetime_label(status.get("next_run")), "Planned execution")
     with status_cols[3]:
-        render_metric_card("Last run", format_datetime_label(status.get("last_run")), "Last execution")
+        render_metric_card("Last run", format_datetime_label(status.get("last_run")), "Latest execution")
     with status_cols[4]:
         render_metric_card("Last status", status.get("last_status", "IDLE"), "Execution result")
+    with status_cols[5]:
+        render_metric_card("Report status", report_status, "Latest report availability")
 
-    config_cols = st.columns([1.2, 1.2, 0.8, 0.8, 1.2])
-    with config_cols[0]:
-        auto_locations = st.text_input("Locations", value=status.get("locations", settings.AUTO_MODE_LOCATIONS), key="auto_cfg_locations")
-    with config_cols[1]:
-        auto_categories = st.text_input("Categories", value=status.get("categories", settings.AUTO_MODE_CATEGORIES), key="auto_cfg_categories")
-    with config_cols[2]:
-        auto_limit = st.number_input("Limit", min_value=1, max_value=50, value=int(status.get("limit", settings.AUTO_MODE_LIMIT)), key="auto_cfg_limit")
-    with config_cols[3]:
-        auto_language = st.selectbox("Language", ["fr", "en"], index=0 if status.get("language", "fr") == "fr" else 1, key="auto_cfg_language")
-    with config_cols[4]:
-        auto_cron = st.text_input("Cron", value=status.get("cron_expression", settings.AUTO_MODE_CRON), key="auto_cfg_cron")
+    render_section("Last Run", "Latest Summary", "Key results from the most recent autonomous outreach run.")
+    summary_cols = st.columns(5)
+    with summary_cols[0]:
+        render_metric_card("Leads found", str(latest_summary.get("leads_found", 0)), "Collected and analyzed")
+    with summary_cols[1]:
+        render_metric_card("Emails sent", str(latest_summary.get("email_sent", 0)), "Email channel")
+    with summary_cols[2]:
+        render_metric_card("SMS sent", str(latest_summary.get("sms_sent", 0)), "SMS fallback")
+    with summary_cols[3]:
+        render_metric_card("Skipped", str(latest_summary.get("skipped", 0)), "No email and no phone")
+    with summary_cols[4]:
+        render_metric_card("Failed", str(latest_summary.get("failed", 0)), "Execution errors")
 
-    action_cols = st.columns([1, 1, 1.5])
-    with action_cols[0]:
-        auto_enabled = st.checkbox("Auto mode enabled", value=bool(status.get("enabled")), key="auto_cfg_enabled")
-    with action_cols[1]:
-        run_dry = st.checkbox("Dry run now", value=False, key="auto_cfg_dry")
-    with action_cols[2]:
-        st.caption("Default every 2 days cron: `0 9 */2 * *`")
-
-    button_cols = st.columns(2)
-    with button_cols[0]:
-        if st.button("Save automation config", use_container_width=True):
-            scheduler_service.update_auto_schedule(
-                cron_expression=auto_cron,
-                locations=auto_locations,
-                categories=auto_categories,
-                limit=int(auto_limit),
-                language=auto_language,
-                enabled=auto_enabled,
-            )
-            st.success("Automation configuration updated.")
-            st.rerun()
-    with button_cols[1]:
-        if st.button("Run autonomous outreach now", type="primary", use_container_width=True):
-            summary = scheduler_service.run_auto_outreach_now(simulate=run_dry)
-            st.session_state["last_auto_outreach_summary"] = summary
-            st.success(
-                f"Run complete. leads_found={summary.get('leads_found', 0)} "
-                f"email_sent={summary.get('email_sent', 0)} sms_sent={summary.get('sms_sent', 0)} "
-                f"skipped={summary.get('skipped', 0)} failed={summary.get('failed', 0)}"
-            )
-
-    if status.get("last_error"):
-        st.warning(f"Last error: {status.get('last_error')}")
-
-    render_simple_auto_outreach_flow()
-
-    render_section("Reports", "Execution History", "Each autonomous run saves a simple report and a per-lead result file.")
-    report_rows = report_service.list_reports(limit=15)
+    render_section("Recent Runs", "Execution History", "A compact history of recent autonomous runs and outcomes.")
     if report_rows:
-        reports_df = pd.DataFrame(report_rows)
-        st.dataframe(reports_df, use_container_width=True)
-        selected_report_path = st.selectbox("Open report", [row["path"] for row in report_rows], format_func=lambda path: Path(path).name)
+        recent_runs_df = pd.DataFrame([
+            {
+                "Generated": row.get("generated_at"),
+                "Trigger": row.get("trigger"),
+                "Schedule": row.get("schedule_name"),
+                "Leads": row.get("leads_found", 0),
+                "Emails": row.get("email_sent", 0),
+                "SMS": row.get("sms_sent", 0),
+                "Skipped": row.get("skipped", 0),
+                "Failed": row.get("failed", 0),
+            }
+            for row in report_rows[:10]
+        ])
+        st.dataframe(recent_runs_df, hide_index=True, use_container_width=True)
+    else:
+        st.info("No recent runs available yet.")
+
+    render_section("Reports", "Run Reports", "Open the stored JSON/CSV report payloads from recent autonomous runs.")
+    if report_rows:
+        report_cols = st.columns([1.4, 1, 1])
+        with report_cols[0]:
+            selected_report_path = st.selectbox("Report file", [row["path"] for row in report_rows], format_func=lambda path: Path(path).name)
+        with report_cols[1]:
+            selected_meta = next((row for row in report_rows if row["path"] == selected_report_path), {})
+            st.caption(f"Trigger: {selected_meta.get('trigger', '')}")
+            st.caption(f"Generated: {selected_meta.get('generated_at', '')}")
+        with report_cols[2]:
+            if selected_report_path:
+                st.caption(selected_report_path)
         report_payload = report_service.load_report(selected_report_path)
         if report_payload:
-            summary = report_payload.get("summary", {})
-            summary_cols = st.columns(5)
-            with summary_cols[0]:
-                render_metric_card("Leads found", str(summary.get("leads_found", 0)), "Collected and analyzed")
-            with summary_cols[1]:
-                render_metric_card("Emails sent", str(summary.get("email_sent", 0)), "Email channel")
-            with summary_cols[2]:
-                render_metric_card("SMS sent", str(summary.get("sms_sent", 0)), "SMS fallback")
-            with summary_cols[3]:
-                render_metric_card("Skipped", str(summary.get("skipped", 0)), "No email and no phone")
-            with summary_cols[4]:
-                render_metric_card("Failed", str(summary.get("failed", 0)), "Execution errors")
             if report_payload.get("failure_reasons"):
                 st.json(report_payload.get("failure_reasons"))
-            report_results_df = pd.DataFrame(summary.get("results", []))
+            report_results_df = pd.DataFrame(report_payload.get("summary", {}).get("results", []))
             if not report_results_df.empty:
                 st.dataframe(report_results_df, use_container_width=True)
     else:
-        st.info("No automation report found yet.")
+        st.info("No report saved yet.")
 
-    render_section("Monitoring", "Logs and Lead Summary", "Use this view to monitor the autonomous machine, not to manage each lead manually.")
+    render_section("Logs", "Execution Logs", "Tail of the application log for quick troubleshooting.")
+    log_text = read_log_tail()
+    if log_text:
+        st.code(log_text, language="text")
+    else:
+        st.info("No logs available yet.")
+
+    render_section("Lead Summary", "Recent Outreach Activity", "Latest contacted prospects and their send outcomes.")
     lead_summary = pd.DataFrame(
         [
             {
@@ -302,11 +201,162 @@ def render_automation_center():
         ]
     )
     if not lead_summary.empty:
-        st.dataframe(lead_summary, use_container_width=True)
-    log_text = read_log_tail()
-    if log_text:
-        with st.expander("Execution logs", expanded=False):
-            st.code(log_text, language="text")
+        st.dataframe(lead_summary, hide_index=True, use_container_width=True)
+    else:
+        st.info("No recent outreach activity yet.")
+
+    render_section("Configuration", "Minimal Automation Config", "Adjust the autonomous schedule, scope and runtime settings from one small panel.")
+    config_cols = st.columns([1.2, 1.2, 0.8, 0.8, 1.2])
+    with config_cols[0]:
+        auto_locations = st.text_input("Locations", value=status.get("locations", settings.AUTO_MODE_LOCATIONS), key="auto_cfg_locations")
+    with config_cols[1]:
+        auto_categories = st.text_input("Categories", value=status.get("categories", settings.AUTO_MODE_CATEGORIES), key="auto_cfg_categories")
+    with config_cols[2]:
+        auto_limit = st.number_input("Limit", min_value=1, max_value=50, value=int(status.get("limit", settings.AUTO_MODE_LIMIT)), key="auto_cfg_limit")
+    with config_cols[3]:
+        auto_language = st.selectbox("Language", ["fr", "en"], index=0 if status.get("language", "fr") == "fr" else 1, key="auto_cfg_language")
+    with config_cols[4]:
+        auto_cron = st.text_input("Cron", value=status.get("cron_expression", settings.AUTO_MODE_CRON), key="auto_cfg_cron")
+    config_action_cols = st.columns([1, 2])
+    with config_action_cols[0]:
+        auto_enabled = st.checkbox("Auto mode enabled", value=bool(status.get("enabled")), key="auto_cfg_enabled")
+    with config_action_cols[1]:
+        if st.button("Save automation config", use_container_width=True):
+            scheduler_service.update_auto_schedule(
+                cron_expression=auto_cron,
+                locations=auto_locations,
+                categories=auto_categories,
+                limit=int(auto_limit),
+                language=auto_language,
+                enabled=auto_enabled,
+            )
+            st.success("Automation configuration updated.")
+            st.rerun()
+
+    if status.get("last_error"):
+        st.warning(f"Last error: {status.get('last_error')}")
+
+
+def render_manual_debug_mode():
+    with st.expander("Debug / Manual Mode", expanded=False):
+        render_section("Debug", "Manual and Troubleshooting Tools", "Secondary tools for testing, previews, targeted sends and diagnostics.")
+        render_debug_tools()
+
+        render_search_section()
+        render_section("Search Diagnostics", "Observability", "Queries, providers and raw candidate counts for the latest collection run.")
+        render_search_diagnostics()
+
+        render_section("Lead Intelligence", "Manual Review", "Manual inspection tools kept for debugging and exceptional operator workflows.")
+        prospects, selected_prospects = render_lead_console()
+        if not prospects:
+            st.info("No prospects found. Launch a search to start building the pipeline.")
+            return
+
+        export_cols = st.columns(2)
+        with export_cols[0]:
+            if st.button("Export CSV", use_container_width=True):
+                ExportService().export_leads("csv")
+                st.success("CSV export created.")
+        with export_cols[1]:
+            if st.button("Export Excel", use_container_width=True):
+                ExportService().export_leads("xlsx")
+                st.success("Excel export created.")
+
+        render_section("Sender Identity", "KAH.DIGITAL Outreach", "Professional sender identity, signature and mockup quality settings used across emails, follow-ups and exports.")
+        render_sender_identity_preview()
+
+        render_section("Preview", "Manual Preview Examples", "Preview one lead, inspect the generated outreach assets and troubleshoot message quality.")
+        preview_pool = selected_prospects or prospects
+        prospect = resolve_preview_prospect(preview_pool)
+        render_prospect_summary(prospect, f"preview_{prospect.id}")
+        notes_data = parse_notes(prospect.notes)
+        lang = st.selectbox("Preview language", ["fr", "en"], index=0 if (prospect.email_language or "fr") == "fr" else 1)
+        outreach_asset = st.selectbox("Outreach asset", ["Primary email", "Short email", "Follow-up J+2", "Follow-up J+5", "Final follow-up J+10", "SMS", "Call script", "Contact form", "Social DM"])
+        subject, body, html_body = build_outreach_preview(prospect, notes_data, lang, outreach_asset)
+
+        preview_cols = st.columns([1, 1.2])
+        with preview_cols[0]:
+            render_key_value_card("Example Context", [
+                ("Language", prospect.email_language or "N/A"),
+                ("Price", format_price_range(prospect.estimated_price_min, prospect.estimated_price_max, prospect.country)),
+                ("Recommended channel", notes_data.get("recommended_channel", "N/A")),
+                ("Selected outreach", prospect.selected_outreach_channel or "N/A"),
+                ("Outreach status", prospect.outreach_status or "N/A"),
+                ("Recipient", prospect.email or prospect.phone or "Unavailable"),
+                ("Send status", get_send_indicator(prospect.send_status)),
+                ("Last error", prospect.last_send_error or "None"),
+            ])
+        with preview_cols[1]:
+            st.text_input("Subject", value=subject, key=f"subject_{prospect.id}")
+            st.text_area("Message", value=body, height=260, key=f"body_{prospect.id}")
+            if html_body:
+                with st.expander("HTML preview", expanded=False):
+                    components.html(html_body, height=520, scrolling=True)
+        render_alternative_outreach_panel(prospect, notes_data)
+
+        render_section("Manual Send", "Targeted Send Controls", "Manual send actions are still available here for isolated testing and support.")
+        render_send_panel(prospects, selected_prospects, prospect, subject, body, html_body)
+
+        if st.session_state.get("last_send_summary"):
+            summary = st.session_state["last_send_summary"]
+            st.caption(f"Last manual send: selected={summary.get('selected', 0)} | sent={summary.get('sent', 0)} | failed={summary.get('failed', 0)} | skipped={summary.get('skipped', 0)} | simulated={summary.get('simulated', 0)}")
+            results_df = pd.DataFrame(summary.get("results", []))
+            if not results_df.empty:
+                st.dataframe(results_df, use_container_width=True)
+
+
+def render_debug_tools():
+    scheduler_service = SchedulerService()
+    status = scheduler_service.get_auto_schedule_status()
+    lead_service = LeadService()
+    debug_cols = st.columns([1, 1, 1.2])
+    with debug_cols[0]:
+        debug_run_dry = st.checkbox("Dry run manual trigger", value=True, key="debug_run_dry")
+    with debug_cols[1]:
+        test_to_self = st.checkbox("Test send to self", value=True, key="debug_test_to_self")
+    with debug_cols[2]:
+        st.caption("Use these tools for one-off checks only. The autonomous scheduler remains the primary flow.")
+
+    button_cols = st.columns(2)
+    with button_cols[0]:
+        if st.button("Run auto flow now", use_container_width=True):
+            summary = scheduler_service.run_auto_outreach_now(simulate=debug_run_dry)
+            st.session_state["last_auto_outreach_summary"] = summary
+            st.success(
+                f"Manual auto run complete. leads_found={summary.get('leads_found', 0)} "
+                f"email_sent={summary.get('email_sent', 0)} sms_sent={summary.get('sms_sent', 0)} "
+                f"skipped={summary.get('skipped', 0)} failed={summary.get('failed', 0)}"
+            )
+    with button_cols[1]:
+        if st.button("Send one test email to self", use_container_width=True):
+            prospects = get_prospects(has_email=True, send_status=None)
+            if not prospects:
+                st.warning("No lead with email is available for a self-test.")
+            else:
+                summary = lead_service.send_emails(
+                    selected_ids=[prospects[0].id],
+                    limit=1,
+                    only_not_sent=False,
+                    test_to=settings.PROFESSIONAL_EMAIL if test_to_self else None,
+                    simulate=debug_run_dry,
+                    allow_resend=True,
+                )
+                st.session_state["last_send_summary"] = summary
+                st.success(
+                    f"Test send complete. sent={summary.get('sent', 0)} failed={summary.get('failed', 0)} "
+                    f"skipped={summary.get('skipped', 0)} simulated={summary.get('simulated', 0)}"
+                )
+
+    render_key_value_card("Troubleshooting", [
+        ("Scheduler running", "Yes" if status.get("scheduler_running") else "No"),
+        ("Automation enabled", "Yes" if status.get("enabled") else "No"),
+        ("Next run", format_datetime_label(status.get("next_run"))),
+        ("Last status", status.get("last_status", "IDLE")),
+        ("SMTP host", settings.SMTP_HOST or "Missing"),
+        ("SMS provider", settings.SMS_PROVIDER or "Missing"),
+    ])
+    for warning in settings.get_smtp_identity_warnings():
+        st.warning(warning)
 
 
 def render_search_section():
