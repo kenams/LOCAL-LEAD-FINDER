@@ -70,6 +70,7 @@ def print_auto_outreach_preflight(preflight: dict) -> None:
         f"simulate={preflight.get('simulate')} "
         f"smtp_ready={preflight.get('smtp_ready')} "
         f"sms_enabled={preflight.get('sms_enabled')} "
+        f"require_full_contact={preflight.get('require_full_contact')} "
         f"sms_ready={preflight.get('sms_ready')} "
         f"sms_provider={preflight.get('sms_provider') or 'none'} "
         f"generate_mockups={preflight.get('generate_mockups')} "

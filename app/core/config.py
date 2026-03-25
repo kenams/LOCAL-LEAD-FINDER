@@ -65,6 +65,7 @@ class Settings:
     AUTO_MODE_LIMIT: int = int(os.getenv("AUTO_MODE_LIMIT", 10))
     AUTO_MODE_LANGUAGE: str = os.getenv("AUTO_MODE_LANGUAGE", "fr")
     AUTO_MODE_SMS_ENABLED: bool = os.getenv("AUTO_MODE_SMS_ENABLED", "true").lower() == "true"
+    AUTO_MODE_REQUIRE_EMAIL_AND_PHONE: bool = os.getenv("AUTO_MODE_REQUIRE_EMAIL_AND_PHONE", "false").lower() == "true"
     AUTO_MODE_GENERATE_MOCKUPS: bool = os.getenv("AUTO_MODE_GENERATE_MOCKUPS", "false").lower() == "true"
     AUTO_MODE_DEPLOY_MOCKUPS: bool = os.getenv("AUTO_MODE_DEPLOY_MOCKUPS", "false").lower() == "true"
 

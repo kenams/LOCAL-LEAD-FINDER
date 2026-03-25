@@ -124,11 +124,29 @@ class LeadService:
             unique_leads = self.deduplicator.deduplicate_leads(all_leads)
             processed_leads = await self._process_leads(unique_leads, language)
             filtered_leads, rejected_leads = self.lead_filter.filter_leads(processed_leads)
-            outreach_ready_leads = await self._prepare_outreach_assets(filtered_leads, language, auto_mode=True)
+            auto_ready_leads, auto_rejected_leads = self._filter_auto_mode_contacts(filtered_leads)
+            rejected_leads.extend(auto_rejected_leads)
+            outreach_ready_leads = await self._prepare_outreach_assets(auto_ready_leads, language, auto_mode=True)
             saved_count, prospect_ids = self._save_leads_with_ids(outreach_ready_leads)
 
             self._finalize_search_diagnostics(search_diagnostics, processed_leads, outreach_ready_leads, rejected_leads)
             self._update_search_run(search_run, saved_count, "COMPLETED", diagnostics=search_diagnostics)
+
+            if not prospect_ids:
+                return {
+                    "selected": 0,
+                    "email_sent": 0,
+                    "sms_sent": 0,
+                    "failed": 0,
+                    "skipped": 0,
+                    "simulated": 0,
+                    "results": [],
+                    "locations": locations,
+                    "categories": categories,
+                    "leads_found": len(processed_leads),
+                    "contact_ready": len(auto_ready_leads),
+                    "leads_saved": saved_count,
+                }
 
             send_summary = self.send_outreach(
                 selected_ids=prospect_ids,
@@ -143,6 +161,7 @@ class LeadService:
                     "locations": locations,
                     "categories": categories,
                     "leads_found": len(processed_leads),
+                    "contact_ready": len(auto_ready_leads),
                     "leads_saved": saved_count,
                 }
             )
@@ -169,6 +188,7 @@ class LeadService:
         smtp_ready = self.email_sender.is_configured()
         sms_ready = self.sms_sender.is_configured()
         sms_enabled = settings.AUTO_MODE_SMS_ENABLED
+        require_full_contact = settings.AUTO_MODE_REQUIRE_EMAIL_AND_PHONE
         generate_mockups = self._should_generate_mockups(auto_mode=True)
         deploy_mockups = self._should_deploy_mockups(auto_mode=True)
 
@@ -176,6 +196,8 @@ class LeadService:
             warnings.append("AUTO_SEND_ENABLED is false: real delivery is disabled for this run.")
         if not smtp_ready:
             warnings.append("SMTP is incomplete: email-capable leads will fail with smtp_not_configured.")
+        if require_full_contact:
+            warnings.append("AUTO_MODE_REQUIRE_EMAIL_AND_PHONE is true: leads missing email or phone will be skipped before outreach.")
         if not sms_enabled:
             warnings.append("AUTO_MODE_SMS_ENABLED is false: phone-only leads will be skipped.")
         elif not settings.SMS_PROVIDER:
@@ -194,6 +216,7 @@ class LeadService:
             "simulate": simulate,
             "smtp_ready": smtp_ready,
             "sms_enabled": sms_enabled,
+            "require_full_contact": require_full_contact,
             "sms_ready": sms_ready,
             "sms_provider": settings.SMS_PROVIDER or "",
             "generate_mockups": generate_mockups,
@@ -484,6 +507,24 @@ class LeadService:
 
         return prepared
 
+    def _filter_auto_mode_contacts(self, leads: List[dict]) -> tuple[List[dict], List[dict]]:
+        """Keep only leads that match the current autonomous contact quality policy."""
+        if not settings.AUTO_MODE_REQUIRE_EMAIL_AND_PHONE:
+            return leads, []
+
+        eligible: List[dict] = []
+        rejected: List[dict] = []
+        for lead in leads:
+            if lead.get("email") and lead.get("phone"):
+                eligible.append(lead)
+                continue
+            rejected.append({**lead, "rejection_reason": "missing_email_or_phone_for_auto_mode"})
+
+        logger.info(
+            f"Auto-mode contact quality filter kept {len(eligible)} leads and rejected {len(rejected)} leads requiring both email and phone"
+        )
+        return eligible, rejected
+
     def _should_generate_mockups(self, auto_mode: bool) -> bool:
         """Only generate mockups in auto mode when explicitly enabled."""
         if not auto_mode:
@@ -650,7 +691,7 @@ class LeadService:
             if settings.SEND_BATCH_SIZE > 0:
                 send_limit = min(send_limit, settings.SEND_BATCH_SIZE)
             query = db.query(Prospect)
-            if selected_ids:
+            if selected_ids is not None:
                 query = query.filter(Prospect.id.in_(selected_ids))
             if country:
                 query = query.filter(Prospect.country == country)
@@ -796,7 +837,7 @@ class LeadService:
                 send_limit = min(send_limit, settings.SEND_BATCH_SIZE)
             query = db.query(Prospect)
 
-            if selected_ids:
+            if selected_ids is not None:
                 query = query.filter(Prospect.id.in_(selected_ids))
             if country:
                 query = query.filter(Prospect.country == country)

@@ -94,6 +94,33 @@ def test_auto_outreach_preflight_reports_sms_disabled(monkeypatch):
     assert any("AUTO_MODE_SMS_ENABLED is false" in warning for warning in preflight["warnings"])
 
 
+def test_auto_outreach_preflight_reports_full_contact_requirement(monkeypatch):
+    service = LeadService()
+    monkeypatch.setattr("app.services.lead_service.settings.AUTO_MODE_REQUIRE_EMAIL_AND_PHONE", True)
+
+    preflight = service.get_auto_outreach_preflight(simulate=False)
+
+    assert preflight["require_full_contact"] is True
+    assert any("AUTO_MODE_REQUIRE_EMAIL_AND_PHONE is true" in warning for warning in preflight["warnings"])
+
+
+def test_filter_auto_mode_contacts_requires_email_and_phone(monkeypatch):
+    service = LeadService()
+    monkeypatch.setattr("app.services.lead_service.settings.AUTO_MODE_REQUIRE_EMAIL_AND_PHONE", True)
+
+    eligible, rejected = service._filter_auto_mode_contacts(
+        [
+            {"business_name": "Full Contact", "email": "lead@example.com", "phone": "+41795551212"},
+            {"business_name": "Email Only", "email": "lead@example.com", "phone": ""},
+            {"business_name": "Phone Only", "email": "", "phone": "+41795550000"},
+        ]
+    )
+
+    assert [lead["business_name"] for lead in eligible] == ["Full Contact"]
+    assert len(rejected) == 2
+    assert all(lead["rejection_reason"] == "missing_email_or_phone_for_auto_mode" for lead in rejected)
+
+
 def test_prepare_outreach_assets_skips_mockups_in_auto_mode(monkeypatch):
     service = LeadService()
     monkeypatch.setattr("app.services.lead_service.settings.AUTO_MODE_GENERATE_MOCKUPS", False)

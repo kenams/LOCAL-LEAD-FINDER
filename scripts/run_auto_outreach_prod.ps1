@@ -13,6 +13,7 @@ $env:AUTO_SEND_ENABLED = "true"
 $env:SEND_MAX_PER_RUN = "1"
 $env:SEND_BATCH_SIZE = "1"
 $env:AUTO_MODE_SMS_ENABLED = "false"
+$env:AUTO_MODE_REQUIRE_EMAIL_AND_PHONE = "true"
 $env:AUTO_MODE_GENERATE_MOCKUPS = "false"
 $env:AUTO_MODE_DEPLOY_MOCKUPS = "false"
 
