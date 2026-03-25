@@ -144,6 +144,29 @@ class TestEmailGenerator:
         assert "peu d'appels a l'action visibles" in email["body"]
         assert "presentation visuelle datee" in email["body"]
 
+    def test_strong_site_uses_optimization_angle_instead_of_generic_redesign(self):
+        generator = EmailGenerator()
+        prospect = {
+            "business_name": "KAH-Digital",
+            "category": "agency",
+            "location": "Lausanne",
+            "country": "CH",
+            "email_language": "fr",
+            "website_page_count": 6,
+            "site_quality_score": 82,
+            "has_modern_ui": True,
+            "has_seo_foundation": True,
+            "target_type": "growth_opportunity",
+        }
+
+        email = generator.generate_email(prospect, "fr")
+
+        assert email["selected_offer_type"] == "website"
+        assert "plus ciblée" in email["subject"]
+        assert "Votre site donne deja une bonne image" in email["body"]
+        assert "pages plus ciblees" in email["body"]
+        assert "preuves et cas clients plus visibles" in email["body"]
+
     def test_email_without_mockup_does_not_force_preview_link(self):
         generator = EmailGenerator()
         prospect = {

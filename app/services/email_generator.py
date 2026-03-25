@@ -109,7 +109,8 @@ class EmailGenerator:
         currency = get_country_profile(country).currency or "EUR"
         business_name = prospect.get("business_name", "")
         niche = self._get_niche_segment(prospect.get("category", ""))
-        angle = self._get_offer_angle(niche, offer_type, language)
+        strong_site = self._is_already_strong_site(prospect)
+        angle = self._get_offer_angle(niche, offer_type, language, strong_site=strong_site)
         landing_price_fr = f"C'est generalement autour de 300 {currency}, selon le besoin."
         website_price_fr = f"C'est souvent entre 500 {currency} et 700 {currency}, selon les besoins."
         landing_price_en = f"This is usually around 300 {currency}, depending on what is needed."
@@ -122,7 +123,7 @@ class EmailGenerator:
                     "short_subject": angle["short_subject"],
                     "intro": f"Je suis tombe sur {business_name} en cherchant des services comme les votres.",
                     "problem": angle["problem"],
-                    "headline": "Je propose des landing pages modernes :",
+                    "headline": angle.get("headline", "Je propose des landing pages modernes :"),
                     "feature_1": angle["feature_1"],
                     "feature_2": angle["feature_2"],
                     "feature_3": angle["feature_3"],
@@ -135,7 +136,7 @@ class EmailGenerator:
                 "short_subject": angle["short_subject"],
                 "intro": f"I came across {business_name} while looking for businesses like yours.",
                 "problem": angle["problem"],
-                "headline": "I build modern landing pages:",
+                "headline": angle.get("headline", "I build modern landing pages:"),
                 "feature_1": angle["feature_1"],
                 "feature_2": angle["feature_2"],
                 "feature_3": angle["feature_3"],
@@ -150,7 +151,7 @@ class EmailGenerator:
                 "short_subject": angle["short_subject"],
                 "intro": f"Je suis tombe sur {business_name} en cherchant des services comme les votres.",
                 "problem": angle["problem"],
-                "headline": "Je propose des sites vitrines simples et modernes :",
+                "headline": angle.get("headline", "Je propose des sites vitrines simples et modernes :"),
                 "feature_1": angle["feature_1"],
                 "feature_2": angle["feature_2"],
                 "feature_3": angle["feature_3"],
@@ -163,7 +164,7 @@ class EmailGenerator:
             "short_subject": angle["short_subject"],
             "intro": f"I came across {business_name} while looking for businesses like yours.",
             "problem": angle["problem"],
-            "headline": "I build simple modern showcase websites:",
+            "headline": angle.get("headline", "I build simple modern showcase websites:"),
             "feature_1": angle["feature_1"],
             "feature_2": angle["feature_2"],
             "feature_3": angle["feature_3"],
@@ -171,6 +172,13 @@ class EmailGenerator:
             "price": website_price_en,
             "cta": "If useful, I can send a short proposal adapted to your business.",
         }
+
+    def _is_already_strong_site(self, prospect: Dict) -> bool:
+        site_quality_score = float(prospect.get("site_quality_score") or 0)
+        page_count = int(prospect.get("website_page_count") or 0)
+        has_modern_ui = bool(prospect.get("has_modern_ui"))
+        has_seo_foundation = bool(prospect.get("has_seo_foundation"))
+        return site_quality_score >= 75 or (page_count >= 4 and has_modern_ui and has_seo_foundation)
 
     def _get_niche_segment(self, category: str) -> str:
         normalized = (category or "").lower()
@@ -182,7 +190,27 @@ class EmailGenerator:
             return "trade"
         return "professional"
 
-    def _get_offer_angle(self, niche: str, offer_type: str, language: str) -> Dict[str, str]:
+    def _get_offer_angle(self, niche: str, offer_type: str, language: str, *, strong_site: bool = False) -> Dict[str, str]:
+        if strong_site and offer_type == "website":
+            if language == "fr":
+                return {
+                    "subject": "Une version plus ciblée pour mieux convertir",
+                    "short_subject": "Optimisation conversion",
+                    "problem": "Votre site donne deja une bonne image. Je vois surtout une opportunite d'aller plus loin sur la conversion avec des pages plus ciblees, plus de preuve et un contact plus direct.",
+                    "headline": "Je proposerais plutot ce type d'optimisation :",
+                    "feature_1": "pages par offre ou service plus ciblees",
+                    "feature_2": "preuves et cas clients plus visibles",
+                    "feature_3": "parcours de contact plus direct",
+                }
+            return {
+                "subject": "A more targeted version to convert better",
+                "short_subject": "Conversion optimization",
+                "problem": "Your website already gives a solid impression. The main opportunity I see is to push conversion further with more targeted pages, stronger proof and a more direct contact path.",
+                "headline": "I would focus on this kind of optimization:",
+                "feature_1": "more targeted pages by offer or service",
+                "feature_2": "more visible proof and case studies",
+                "feature_3": "more direct enquiry path",
+            }
         if language == "fr":
             angles = {
                 "landing_page": {
