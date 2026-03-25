@@ -34,13 +34,14 @@ class EmailGenerator:
             }
 
     def _build_pack(self, prospect: Dict, language: str) -> Dict[str, object]:
-        identity = get_business_identity()
         country = prospect.get("country")
         selected_offer_type = prospect.get("selected_offer_type") or self._select_offer_type(prospect)
-        offer_copy = self._get_offer_copy(selected_offer_type, language, country)
+        offer_copy = self._get_offer_copy(prospect, selected_offer_type, language, country)
         greeting = "Bonjour," if language == "fr" else "Hello,"
         signature_text = get_text_signature(language)
         signature_html = get_html_signature(language)
+        issues_lines = self._get_issue_lines(prospect, language)
+        issue_sentence = self._render_issue_sentence(issues_lines, language)
 
         body_lines = [
             greeting,
@@ -48,6 +49,7 @@ class EmailGenerator:
             offer_copy["intro"],
             "",
             offer_copy["problem"],
+            issue_sentence,
             "",
             offer_copy["headline"],
             f"-> {offer_copy['feature_1']}",
@@ -69,6 +71,7 @@ class EmailGenerator:
             intro=escape(offer_copy["intro"]),
             paragraphs=[
                 escape(offer_copy["problem"]),
+                escape(issue_sentence) if issue_sentence else "",
                 (
                     f"<div><div style=\"font-weight:700; margin-bottom:8px;\">{escape(offer_copy['headline'])}</div>"
                     f"<ul style=\"margin:0; padding-left:18px; color:#EDE7DB;\">"
@@ -102,8 +105,11 @@ class EmailGenerator:
             return "landing_page"
         return "website"
 
-    def _get_offer_copy(self, offer_type: str, language: str, country: str | None) -> Dict[str, str]:
+    def _get_offer_copy(self, prospect: Dict, offer_type: str, language: str, country: str | None) -> Dict[str, str]:
         currency = get_country_profile(country).currency or "EUR"
+        business_name = prospect.get("business_name", "")
+        niche = self._get_niche_segment(prospect.get("category", ""))
+        angle = self._get_offer_angle(niche, offer_type, language)
         landing_price_fr = f"C'est generalement autour de 300 {currency}, selon le besoin."
         website_price_fr = f"C'est souvent entre 500 {currency} et 700 {currency}, selon les besoins."
         landing_price_en = f"This is usually around 300 {currency}, depending on what is needed."
@@ -112,59 +118,222 @@ class EmailGenerator:
         if offer_type == "landing_page":
             if language == "fr":
                 return {
-                    "subject": "Une version plus claire pour attirer plus de clients",
-                    "short_subject": "Landing page plus claire",
-                    "intro": "Je suis tombe sur votre site en cherchant des services comme les votres.",
-                    "problem": "Je pense qu'il y a une opportunite simple d'ameliorer la conversion avec une page plus claire et orientee clients.",
+                    "subject": angle["subject"],
+                    "short_subject": angle["short_subject"],
+                    "intro": f"Je suis tombe sur {business_name} en cherchant des services comme les votres.",
+                    "problem": angle["problem"],
                     "headline": "Je propose des landing pages modernes :",
-                    "feature_1": "design propre et mobile",
-                    "feature_2": "message clair",
-                    "feature_3": "formulaire de contact",
+                    "feature_1": angle["feature_1"],
+                    "feature_2": angle["feature_2"],
+                    "feature_3": angle["feature_3"],
                     "delivery": "Livraison en general sous 3 a 5 jours.",
                     "price": landing_price_fr,
-                    "cta": "Si vous voulez, je peux vous proposer une version adaptee a votre activite.",
+                    "cta": "Si vous voulez, je peux vous envoyer une proposition tres simple adaptee a votre activite.",
                 }
             return {
-                "subject": "A clearer page to attract more clients",
-                "short_subject": "Clearer landing page",
-                "intro": "I came across your website while looking for businesses like yours.",
-                "problem": "I believe there is a simple opportunity to improve conversion with a clearer, more client-focused page.",
+                "subject": angle["subject"],
+                "short_subject": angle["short_subject"],
+                "intro": f"I came across {business_name} while looking for businesses like yours.",
+                "problem": angle["problem"],
                 "headline": "I build modern landing pages:",
-                "feature_1": "clean mobile design",
-                "feature_2": "clear message",
-                "feature_3": "contact form",
+                "feature_1": angle["feature_1"],
+                "feature_2": angle["feature_2"],
+                "feature_3": angle["feature_3"],
                 "delivery": "Delivery is usually within 3 to 5 days.",
                 "price": landing_price_en,
-                "cta": "If useful, I can suggest a version adapted to your business.",
+                "cta": "If useful, I can send a very simple version adapted to your business.",
             }
 
         if language == "fr":
             return {
-                "subject": "Une version plus pro et plus efficace de votre site",
-                "short_subject": "Site vitrine plus pro",
-                "intro": "Je suis tombe sur votre site en cherchant des services comme les votres.",
-                "problem": "En regardant votre site, je pense qu'il serait possible de le rendre plus clair et plus efficace pour convertir vos visiteurs.",
+                "subject": angle["subject"],
+                "short_subject": angle["short_subject"],
+                "intro": f"Je suis tombe sur {business_name} en cherchant des services comme les votres.",
+                "problem": angle["problem"],
                 "headline": "Je propose des sites vitrines simples et modernes :",
-                "feature_1": "structure claire",
-                "feature_2": "design mobile",
-                "feature_3": "base SEO propre",
+                "feature_1": angle["feature_1"],
+                "feature_2": angle["feature_2"],
+                "feature_3": angle["feature_3"],
                 "delivery": "Livraison en general sous 5 a 7 jours.",
                 "price": website_price_fr,
-                "cta": "Si vous voulez, je peux vous proposer une version adaptee a votre activite.",
+                "cta": "Si vous voulez, je peux vous envoyer une proposition courte adaptee a votre activite.",
             }
         return {
-            "subject": "A more professional and more effective version of your website",
-            "short_subject": "More effective website",
-            "intro": "I came across your website while looking for businesses like yours.",
-            "problem": "Looking at your website, I believe it could be made clearer and more effective at converting visitors.",
+            "subject": angle["subject"],
+            "short_subject": angle["short_subject"],
+            "intro": f"I came across {business_name} while looking for businesses like yours.",
+            "problem": angle["problem"],
             "headline": "I build simple modern showcase websites:",
-            "feature_1": "clear structure",
-            "feature_2": "mobile design",
-            "feature_3": "clean SEO basics",
+            "feature_1": angle["feature_1"],
+            "feature_2": angle["feature_2"],
+            "feature_3": angle["feature_3"],
             "delivery": "Delivery is usually within 5 to 7 days.",
             "price": website_price_en,
-            "cta": "If useful, I can suggest a version adapted to your business.",
+            "cta": "If useful, I can send a short proposal adapted to your business.",
         }
+
+    def _get_niche_segment(self, category: str) -> str:
+        normalized = (category or "").lower()
+        if any(term in normalized for term in ["coiff", "hair", "salon", "barber", "beauty"]):
+            return "beauty"
+        if any(term in normalized for term in ["spa", "wellness", "institut", "massage"]):
+            return "wellness"
+        if any(term in normalized for term in ["plomb", "plumb", "elect", "electric", "chauffag", "trade"]):
+            return "trade"
+        return "professional"
+
+    def _get_offer_angle(self, niche: str, offer_type: str, language: str) -> Dict[str, str]:
+        if language == "fr":
+            angles = {
+                "landing_page": {
+                    "professional": {
+                        "subject": "Une page plus claire pour attirer plus de clients",
+                        "short_subject": "Landing page plus claire",
+                        "problem": "Je pense qu'il y a une opportunite simple d'ameliorer la conversion avec une page plus claire et orientee clients.",
+                        "feature_1": "message clair des le premier ecran",
+                        "feature_2": "preuve et credibilite mieux mises en avant",
+                        "feature_3": "formulaire de contact plus direct",
+                    },
+                    "trade": {
+                        "subject": "Une page plus directe pour generer plus de devis",
+                        "short_subject": "Landing page devis",
+                        "problem": "Sur ce type d'activite, beaucoup de demandes se jouent sur une page simple, claire et mobile.",
+                        "feature_1": "offre et zones d'intervention visibles tout de suite",
+                        "feature_2": "elements de confiance plus rassurants",
+                        "feature_3": "demande de devis plus rapide",
+                    },
+                    "beauty": {
+                        "subject": "Une page plus claire pour generer plus de rendez-vous",
+                        "short_subject": "Landing page rendez-vous",
+                        "problem": "Je pense qu'une page plus simple et plus desirables pourrait mieux convertir vos visiteurs en prises de rendez-vous.",
+                        "feature_1": "presentation plus nette des prestations",
+                        "feature_2": "design mobile plus desirables",
+                        "feature_3": "prise de contact ou rendez-vous plus directe",
+                    },
+                    "wellness": {
+                        "subject": "Une page plus rassurante pour attirer plus de demandes",
+                        "short_subject": "Landing page plus rassurante",
+                        "problem": "Je pense qu'une page plus calme, plus claire et plus rassurante pourrait mieux transformer vos visiteurs en demandes reelles.",
+                        "feature_1": "presentation plus apaisante des soins",
+                        "feature_2": "message plus clair sur les benefices",
+                        "feature_3": "prise de contact plus fluide",
+                    },
+                },
+                "website": {
+                    "professional": {
+                        "subject": "Une version plus pro et plus efficace de votre site",
+                        "short_subject": "Site vitrine plus pro",
+                        "problem": "En regardant votre site, je pense qu'il serait possible de le rendre plus clair et plus efficace pour convertir vos visiteurs.",
+                        "feature_1": "structure claire",
+                        "feature_2": "design mobile",
+                        "feature_3": "base SEO propre",
+                    },
+                    "trade": {
+                        "subject": "Un site plus clair pour generer plus de devis",
+                        "short_subject": "Site vitrine devis",
+                        "problem": "Je pense qu'un site vitrine plus simple et plus rassurant pourrait mieux capter les demandes de devis.",
+                        "feature_1": "services plus lisibles",
+                        "feature_2": "preuves de confiance mieux visibles",
+                        "feature_3": "contact plus direct sur mobile",
+                    },
+                    "beauty": {
+                        "subject": "Une version plus premium et plus efficace de votre site",
+                        "short_subject": "Site vitrine plus premium",
+                        "problem": "Je pense qu'un site vitrine plus propre et plus desirables pourrait mieux valoriser votre image et vos prestations.",
+                        "feature_1": "univers visuel plus premium",
+                        "feature_2": "prestations mieux presentees",
+                        "feature_3": "parcours mobile plus fluide",
+                    },
+                    "wellness": {
+                        "subject": "Une version plus rassurante et plus fluide de votre site",
+                        "short_subject": "Site vitrine plus fluide",
+                        "problem": "Je pense qu'un site vitrine plus calme et plus clair pourrait mieux inspirer confiance et faciliter la prise de contact.",
+                        "feature_1": "structure plus apaisante",
+                        "feature_2": "contenu plus clair sur les soins",
+                        "feature_3": "base SEO simple et propre",
+                    },
+                },
+            }
+        else:
+            angles = {
+                "landing_page": {
+                    "professional": {
+                        "subject": "A clearer page to attract more clients",
+                        "short_subject": "Clearer landing page",
+                        "problem": "I believe there is a simple opportunity to improve conversion with a clearer, more client-focused page.",
+                        "feature_1": "clear message from the first screen",
+                        "feature_2": "stronger proof and credibility",
+                        "feature_3": "more direct contact form",
+                    },
+                    "trade": {
+                        "subject": "A more direct page to generate more quote requests",
+                        "short_subject": "Quote-focused landing page",
+                        "problem": "In this kind of business, many enquiries are won or lost on a simple, clear mobile page.",
+                        "feature_1": "clear offer and service area from the start",
+                        "feature_2": "stronger trust elements",
+                        "feature_3": "faster quote request flow",
+                    },
+                    "beauty": {
+                        "subject": "A clearer page to bring in more bookings",
+                        "short_subject": "Booking landing page",
+                        "problem": "I believe a simpler and more desirable page could convert more visitors into bookings.",
+                        "feature_1": "clearer service presentation",
+                        "feature_2": "more attractive mobile design",
+                        "feature_3": "more direct booking or contact flow",
+                    },
+                    "wellness": {
+                        "subject": "A more reassuring page to attract more enquiries",
+                        "short_subject": "More reassuring landing page",
+                        "problem": "I believe a calmer, clearer page could turn more visitors into real enquiries.",
+                        "feature_1": "more reassuring treatment presentation",
+                        "feature_2": "clearer value message",
+                        "feature_3": "smoother contact flow",
+                    },
+                },
+                "website": {
+                    "professional": {
+                        "subject": "A more professional and more effective version of your website",
+                        "short_subject": "More effective website",
+                        "problem": "Looking at your website, I believe it could be made clearer and more effective at converting visitors.",
+                        "feature_1": "clear structure",
+                        "feature_2": "mobile design",
+                        "feature_3": "clean SEO basics",
+                    },
+                    "trade": {
+                        "subject": "A clearer website to generate more quote requests",
+                        "short_subject": "Quote-focused website",
+                        "problem": "I believe a simpler, more reassuring showcase website could convert more quote enquiries.",
+                        "feature_1": "clearer service structure",
+                        "feature_2": "stronger trust signals",
+                        "feature_3": "more direct mobile contact path",
+                    },
+                    "beauty": {
+                        "subject": "A more premium and more effective version of your website",
+                        "short_subject": "More premium website",
+                        "problem": "I believe a cleaner and more desirable showcase website could better reflect your image and services.",
+                        "feature_1": "more premium visual direction",
+                        "feature_2": "stronger service presentation",
+                        "feature_3": "smoother mobile experience",
+                    },
+                    "wellness": {
+                        "subject": "A more reassuring and smoother version of your website",
+                        "short_subject": "Smoother website",
+                        "problem": "I believe a calmer, clearer website could build more trust and make contact easier.",
+                        "feature_1": "more calming structure",
+                        "feature_2": "clearer treatment content",
+                        "feature_3": "simple clean SEO base",
+                    },
+                },
+            }
+        return angles[offer_type].get(niche, angles[offer_type]["professional"])
+
+    def _render_issue_sentence(self, issues_lines: List[str], language: str) -> str:
+        if not issues_lines:
+            return ""
+        joined = ", ".join(issues_lines[:2])
+        if language == "fr":
+            return f"Ce qui me fait penser cela: {joined}."
+        return f"What made me think that: {joined}."
 
     def _build_offer_follow_ups(self, prospect: Dict, language: str, offer_type: str) -> Dict[str, Dict[str, str]]:
         business_name = prospect.get("business_name", "")

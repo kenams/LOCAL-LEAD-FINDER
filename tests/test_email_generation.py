@@ -108,6 +108,42 @@ class TestEmailGenerator:
         assert email["body"].count("\n\n") >= 4
         assert "Je propose des sites vitrines simples et modernes" in email["body"]
 
+    def test_trade_landing_page_uses_quote_angle(self):
+        generator = EmailGenerator()
+        prospect = {
+            "business_name": "Depannage Express",
+            "category": "plombier",
+            "location": "Lyon",
+            "country": "FR",
+            "email_language": "fr",
+            "website_page_count": 1,
+            "target_type": "early_stage_business",
+        }
+
+        email = generator.generate_email(prospect, "fr")
+
+        assert email["selected_offer_type"] == "landing_page"
+        assert "devis" in email["subject"].lower()
+        assert "demande de devis plus rapide" in email["body"]
+
+    def test_detected_issues_are_injected_as_short_personalization(self):
+        generator = EmailGenerator()
+        prospect = {
+            "business_name": "Studio Fresh",
+            "category": "consultant",
+            "location": "Paris",
+            "country": "FR",
+            "email_language": "fr",
+            "website_page_count": 2,
+            "detected_issues": ["no_cta", "old_design"],
+        }
+
+        email = generator.generate_email(prospect, "fr")
+
+        assert "Ce qui me fait penser cela" in email["body"]
+        assert "peu d'appels a l'action visibles" in email["body"]
+        assert "presentation visuelle datee" in email["body"]
+
     def test_email_without_mockup_does_not_force_preview_link(self):
         generator = EmailGenerator()
         prospect = {
