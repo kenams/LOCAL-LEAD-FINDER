@@ -1,0 +1,22 @@
+Bonjour,
+
+Je m'appelle [Votre nom] et je suis spécialisé dans la création de sites web pour les petites entreprises locales comme {{ business_name }}.
+
+En analysant votre site web, j'ai identifié un potentiel d'amélioration pour {{ opportunity_angle }}.{% if detected_issues %}
+J'ai pu constater que votre site actuel pourrait être amélioré sur certains aspects comme {{ detected_issues|join(', ') }}.{% endif %}
+
+Je propose de créer un nouveau site moderne avec :
+- Design professionnel et responsive
+- {{ suggested_offer }}
+- Optimisation SEO locale
+- Intégration des réseaux sociaux
+
+Pour un site vitrine complet, le tarif serait de {{ estimated_price_min }} à {{ estimated_price_max }} € HT, livraison en {{ estimated_time }}.
+
+Seriez-vous disponible pour en discuter ?
+
+Cordialement,
+[Votre nom]
+[Votre téléphone]
+[Votre email]
+[Votre site web]

@@ -1,0 +1,22 @@
+Hello,
+
+My name is [Your name] and I specialize in creating websites for local small businesses like {{ business_name }}.
+
+After analyzing your website, I identified opportunities to {{ opportunity_angle }}.{% if detected_issues %}
+I noticed your current site could be improved in areas like {{ detected_issues|join(', ') }}.{% endif %}
+
+I propose creating a modern new website with:
+- Professional responsive design
+- {{ suggested_offer }}
+- Local SEO optimization
+- Social media integration
+
+For a complete business website, pricing would be €{{ estimated_price_min }} to €{{ estimated_price_max }} ex. VAT, delivered in {{ estimated_time }}.
+
+Would you be available to discuss this?
+
+Best regards,
+[Your name]
+[Your phone]
+[Your email]
+[Your website]
