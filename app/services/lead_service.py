@@ -168,6 +168,7 @@ class LeadService:
         warnings = list(settings.get_smtp_identity_warnings())
         smtp_ready = self.email_sender.is_configured()
         sms_ready = self.sms_sender.is_configured()
+        sms_enabled = settings.AUTO_MODE_SMS_ENABLED
         generate_mockups = self._should_generate_mockups(auto_mode=True)
         deploy_mockups = self._should_deploy_mockups(auto_mode=True)
 
@@ -175,7 +176,9 @@ class LeadService:
             warnings.append("AUTO_SEND_ENABLED is false: real delivery is disabled for this run.")
         if not smtp_ready:
             warnings.append("SMTP is incomplete: email-capable leads will fail with smtp_not_configured.")
-        if not settings.SMS_PROVIDER:
+        if not sms_enabled:
+            warnings.append("AUTO_MODE_SMS_ENABLED is false: phone-only leads will be skipped.")
+        elif not settings.SMS_PROVIDER:
             warnings.append("SMS provider is not configured: phone-only leads will fail with sms_provider_not_configured.")
         elif settings.SMS_PROVIDER != "twilio":
             warnings.append(
@@ -190,6 +193,7 @@ class LeadService:
             "auto_send_enabled": settings.AUTO_SEND_ENABLED,
             "simulate": simulate,
             "smtp_ready": smtp_ready,
+            "sms_enabled": sms_enabled,
             "sms_ready": sms_ready,
             "sms_provider": settings.SMS_PROVIDER or "",
             "generate_mockups": generate_mockups,
@@ -730,7 +734,7 @@ class LeadService:
                     else:
                         summary["failed"] += 1
                 else:
-                    error = "no email and no phone"
+                    error = "sms_disabled_by_policy" if prospect.phone and not settings.AUTO_MODE_SMS_ENABLED else "no email and no phone"
                     recipient = ""
                     self._apply_outreach_result(db, prospect, channel="skipped", success=False, skipped=True, simulated=False, error=error)
                     summary["skipped"] += 1
@@ -1143,7 +1147,7 @@ class LeadService:
         """Select the automatic outreach channel for a prospect."""
         if prospect.email:
             return "email"
-        if prospect.phone:
+        if prospect.phone and settings.AUTO_MODE_SMS_ENABLED:
             return "sms"
         return "skipped"
 

@@ -31,6 +31,7 @@ The production wrapper additionally forces safe rollout settings:
 - `AUTO_SEND_ENABLED=true`
 - `SEND_MAX_PER_RUN=1`
 - `SEND_BATCH_SIZE=1`
+- `AUTO_MODE_SMS_ENABLED=false`
 - mockup generation and Netlify deployment disabled
 
 ## One-shot CLI commands

@@ -47,6 +47,13 @@ def test_auto_outreach_channel_prioritizes_email_then_sms_then_skip():
     assert service._select_outreach_channel(Prospect(), {}) == "skipped"
 
 
+def test_auto_outreach_channel_skips_phone_when_sms_disabled(monkeypatch):
+    service = LeadService()
+    monkeypatch.setattr("app.services.lead_service.settings.AUTO_MODE_SMS_ENABLED", False)
+
+    assert service._select_outreach_channel(Prospect(phone="+41795551212"), {}) == "skipped"
+
+
 def test_send_outreach_respects_auto_send_enabled(monkeypatch):
     service = LeadService()
     monkeypatch.setattr("app.services.lead_service.settings.AUTO_SEND_ENABLED", False)
@@ -75,6 +82,16 @@ def test_auto_outreach_preflight_reports_missing_delivery_config(monkeypatch):
     assert any("AUTO_SEND_ENABLED is false" in warning for warning in preflight["warnings"])
     assert any("smtp_not_configured" in warning for warning in preflight["warnings"])
     assert any("sms_provider_not_configured" in warning for warning in preflight["warnings"])
+
+
+def test_auto_outreach_preflight_reports_sms_disabled(monkeypatch):
+    service = LeadService()
+    monkeypatch.setattr("app.services.lead_service.settings.AUTO_MODE_SMS_ENABLED", False)
+
+    preflight = service.get_auto_outreach_preflight(simulate=False)
+
+    assert preflight["sms_enabled"] is False
+    assert any("AUTO_MODE_SMS_ENABLED is false" in warning for warning in preflight["warnings"])
 
 
 def test_prepare_outreach_assets_skips_mockups_in_auto_mode(monkeypatch):
