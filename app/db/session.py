@@ -26,6 +26,7 @@ def init_db():
     Base.metadata.create_all(bind=engine)
     _ensure_prospect_columns()
     _ensure_search_run_columns()
+    _ensure_schedule_columns()
 
     # Create indexes
     with engine.connect() as conn:
@@ -48,6 +49,8 @@ def _ensure_prospect_columns():
         "netlify_deploy_id": "VARCHAR",
         "email_html_fr": "TEXT",
         "email_html_en": "TEXT",
+        "selected_outreach_channel": "VARCHAR",
+        "outreach_status": "VARCHAR",
         "send_status": "VARCHAR",
         "first_sent_at": "DATETIME",
         "last_attempt_at": "DATETIME",
@@ -85,5 +88,29 @@ def _ensure_search_run_columns():
         for column_name, column_type in required_columns.items():
             if column_name not in existing_columns:
                 conn.execute(text(f"ALTER TABLE search_runs ADD COLUMN {column_name} {column_type}"))
+
+        conn.commit()
+
+
+def _ensure_schedule_columns():
+    """Apply lightweight SQLite schema upgrades for schedules."""
+    from sqlalchemy import text
+
+    required_columns = {
+        "next_run": "DATETIME",
+        "last_status": "VARCHAR",
+        "last_error": "TEXT",
+        "last_report_path": "VARCHAR",
+    }
+
+    with engine.connect() as conn:
+        existing_columns = {
+            row[1]
+            for row in conn.execute(text("PRAGMA table_info(schedules)")).fetchall()
+        }
+
+        for column_name, column_type in required_columns.items():
+            if column_name not in existing_columns:
+                conn.execute(text(f"ALTER TABLE schedules ADD COLUMN {column_name} {column_type}"))
 
         conn.commit()

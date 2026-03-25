@@ -1,7 +1,7 @@
 """
 Schedule model
 """
-from sqlalchemy import Column, Integer, String, DateTime, Boolean
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, Text
 from datetime import datetime
 from app.db.base import Base
 
@@ -18,6 +18,9 @@ class Schedule(Base):
     enabled = Column(Boolean, default=True)
     last_run = Column(DateTime)
     next_run = Column(DateTime)
+    last_status = Column(String, default="IDLE")
+    last_error = Column(Text)
+    last_report_path = Column(String)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     def __repr__(self):

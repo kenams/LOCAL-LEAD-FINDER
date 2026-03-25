@@ -43,6 +43,7 @@ def main():
     parser.add_argument("--lang", type=str, default=settings.DEFAULT_LANGUAGE, choices=["fr", "en"], help="Email language")
     parser.add_argument("--generate-emails", action="store_true", help="Generate emails for existing leads")
     parser.add_argument("--send-emails", action="store_true", help="Send generated outreach emails")
+    parser.add_argument("--auto-outreach", action="store_true", help="Search, generate and send automatically by email first, then SMS")
     parser.add_argument("--only-not-sent", action="store_true", help="Only target leads that have never been sent")
     parser.add_argument("--test-to", type=str, help="Override all recipients with a test email address")
     parser.add_argument("--simulate-send", action="store_true", help="Simulate sending without SMTP delivery")
@@ -88,7 +89,7 @@ def main():
     if args.reset_leads:
         deleted = lead_service.reset_leads(clear_search_history=True)
         print(f"Reset completed. {deleted} leads deleted.")
-        if not any([args.collect, args.generate_emails, args.export]):
+        if not any([args.collect, args.auto_outreach, args.generate_emails, args.export]):
             return
 
     if args.collect:
@@ -96,6 +97,35 @@ def main():
         categories = args.categories.split(",") if args.categories else ["coiffeur"]
         saved_count = asyncio.run(lead_service.collect_leads(locations, categories, args.limit, args.lang))
         print(f"Lead collection completed. {saved_count} leads saved.")
+
+    if args.auto_outreach:
+        locations = [item.strip() for item in args.locations.split(",")] if args.locations else ["Geneva"]
+        categories = [item.strip() for item in args.categories.split(",")] if args.categories else ["coiffeur"]
+        summary = asyncio.run(
+            lead_service.auto_outreach(
+                locations=locations,
+                categories=categories,
+                limit=args.limit,
+                language=args.lang,
+                simulate=args.simulate_send,
+            )
+        )
+        print(
+            "Auto outreach completed. "
+            f"leads_found={summary.get('leads_found', 0)} "
+            f"leads_saved={summary.get('leads_saved', 0)} "
+            f"email_sent={summary.get('email_sent', 0)} "
+            f"sms_sent={summary.get('sms_sent', 0)} "
+            f"skipped={summary.get('skipped', 0)} "
+            f"failed={summary.get('failed', 0)} "
+            f"simulated={summary.get('simulated', 0)}"
+        )
+        for row in summary.get("results", []):
+            print(
+                f"- {row.get('business_name')} | {row.get('location')} | "
+                f"channel={row.get('channel_used')} | recipient={row.get('recipient_used') or 'n/a'} | "
+                f"result={row.get('send_result')} | error={row.get('error') or ''}"
+            )
 
     if args.generate_emails:
         asyncio.run(lead_service.generate_emails())
@@ -131,6 +161,7 @@ def main():
 
     if not any([
         args.collect,
+        args.auto_outreach,
         args.generate_emails,
         args.send_emails,
         args.export,

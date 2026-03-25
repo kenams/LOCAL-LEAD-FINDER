@@ -23,6 +23,8 @@ from app.models.prospect import Prospect
 from app.models.search_run import SearchRun
 from app.services.export_service import ExportService
 from app.services.lead_service import LeadService
+from app.services.report_service import ReportService
+from app.services.scheduler_service import SchedulerService
 from app.ui.ui_theme import badge_html, inject_global_styles, priority_badge_html, render_brand_header, render_key_value_card, render_metric_card, render_section, render_sidebar_brand, status_badge_html
 
 SEARCH_LOCATIONS = ["Toulouse", "Montpellier", "Marseille", "Paris", "Geneva", "Zurich", "Lausanne", "New York", "Miami", "Dallas", "Los Angeles", "Sydney", "Melbourne", "Brisbane", "London", "Manchester"]
@@ -49,6 +51,11 @@ def main():
         render_metric_card("Conversion rate", f"{metrics['conversion_rate']}%", "Won vs contacted")
     with cols[4]:
         render_metric_card("Pipeline value", metrics["estimated_revenue"], "Top 10 by priority")
+
+    render_automation_center()
+    show_manual_tools = st.toggle("Show manual/debug tools", value=False)
+    if not show_manual_tools:
+        return
 
     render_search_section()
     render_section("Search Diagnostics", "Observability", "Queries, providers and raw candidate counts for the latest collection run.")
@@ -91,6 +98,8 @@ def main():
             ("Mockup quality", get_mockup_quality_level()),
             ("Mockup URL", prospect.mockup_url or "Unavailable"),
             ("Recommended channel", notes_data.get("recommended_channel", "N/A")),
+            ("Selected outreach", prospect.selected_outreach_channel or "N/A"),
+            ("Outreach status", prospect.outreach_status or "N/A"),
             ("Preferred social", notes_data.get("preferred_social_channel", "N/A")),
             ("Contact form", notes_data.get("contact_form_url", "Unavailable")),
             ("Instagram", notes_data.get("instagram_url", "Unavailable")),
@@ -122,6 +131,182 @@ def main():
         results_df = pd.DataFrame(summary.get("results", []))
         if not results_df.empty:
             st.dataframe(results_df, use_container_width=True)
+
+
+def render_simple_auto_outreach_flow():
+    render_section("Simple Outreach Flow", "Search -> Generate -> Send", "Pick locations and categories, then let the system search, generate and send automatically by email first, then SMS.")
+    step_cols = st.columns([1.4, 1.4, 0.8, 0.9])
+    with step_cols[0]:
+        locations = st.multiselect("Step 1: Locations", SEARCH_LOCATIONS, default=["Geneva", "Sydney"], key="simple_locations")
+    with step_cols[1]:
+        categories = st.multiselect("Step 1: Categories", SEARCH_CATEGORIES, default=["coiffeur"], key="simple_categories")
+    with step_cols[2]:
+        limit = st.number_input("Lead limit", min_value=1, max_value=50, value=10, key="simple_limit")
+    with step_cols[3]:
+        language = st.selectbox("Language", ["fr", "en"], index=0, key="simple_language")
+    control_cols = st.columns([1, 1, 2])
+    with control_cols[0]:
+        simulate = st.checkbox("Dry run", value=False, key="simple_simulate")
+    with control_cols[1]:
+        auto_send_enabled = st.checkbox("Auto-send enabled", value=settings.AUTO_SEND_ENABLED, key="simple_auto_send")
+    with control_cols[2]:
+        if not auto_send_enabled and not simulate:
+            st.warning("Auto-send is disabled in the current config. Enable it here or use dry run.")
+    if st.button("Search and send", type="primary", use_container_width=True):
+        if not (locations and categories):
+            st.error("Select at least one location and one category.")
+        elif not auto_send_enabled and not simulate:
+            st.error("Auto-send is disabled. Enable it or switch to dry run.")
+        else:
+            settings.AUTO_SEND_ENABLED = auto_send_enabled
+            summary = asyncio.run(
+                LeadService().auto_outreach(
+                    locations=locations,
+                    categories=categories,
+                    limit=limit,
+                    language=language,
+                    simulate=simulate,
+                )
+            )
+            st.session_state["last_auto_outreach_summary"] = summary
+            st.success(
+                f"Flow complete. found={summary.get('leads_found', 0)} saved={summary.get('leads_saved', 0)} "
+                f"email_sent={summary.get('email_sent', 0)} sms_sent={summary.get('sms_sent', 0)} "
+                f"skipped={summary.get('skipped', 0)} failed={summary.get('failed', 0)}"
+            )
+    summary = st.session_state.get("last_auto_outreach_summary")
+    if summary:
+        summary_cols = st.columns(5)
+        with summary_cols[0]:
+            render_metric_card("Leads found", str(summary.get("leads_found", 0)), "Collected and analyzed")
+        with summary_cols[1]:
+            render_metric_card("Emails sent", str(summary.get("email_sent", 0)), "Email channel")
+        with summary_cols[2]:
+            render_metric_card("SMS sent", str(summary.get("sms_sent", 0)), "SMS fallback")
+        with summary_cols[3]:
+            render_metric_card("Skipped", str(summary.get("skipped", 0)), "No email and no phone")
+        with summary_cols[4]:
+            render_metric_card("Failed", str(summary.get("failed", 0)), "Send errors")
+        results_df = pd.DataFrame(summary.get("results", []))
+        if not results_df.empty:
+            st.dataframe(results_df, use_container_width=True)
+
+
+def render_automation_center():
+    scheduler_service = SchedulerService()
+    report_service = ReportService()
+    status = scheduler_service.get_auto_schedule_status()
+
+    render_section("Automation", "Autonomous Outreach Mode", "The system runs every 2 days, searches leads, routes email before SMS, skips duplicates, and saves reports.")
+    status_cols = st.columns(5)
+    with status_cols[0]:
+        render_metric_card("Automation", "ON" if status.get("enabled") else "OFF", "Schedule flag")
+    with status_cols[1]:
+        render_metric_card("Scheduler", "RUNNING" if status.get("scheduler_running") else "STOPPED", "Background worker")
+    with status_cols[2]:
+        render_metric_card("Next run", format_datetime_label(status.get("next_run")), "Planned execution")
+    with status_cols[3]:
+        render_metric_card("Last run", format_datetime_label(status.get("last_run")), "Last execution")
+    with status_cols[4]:
+        render_metric_card("Last status", status.get("last_status", "IDLE"), "Execution result")
+
+    config_cols = st.columns([1.2, 1.2, 0.8, 0.8, 1.2])
+    with config_cols[0]:
+        auto_locations = st.text_input("Locations", value=status.get("locations", settings.AUTO_MODE_LOCATIONS), key="auto_cfg_locations")
+    with config_cols[1]:
+        auto_categories = st.text_input("Categories", value=status.get("categories", settings.AUTO_MODE_CATEGORIES), key="auto_cfg_categories")
+    with config_cols[2]:
+        auto_limit = st.number_input("Limit", min_value=1, max_value=50, value=int(status.get("limit", settings.AUTO_MODE_LIMIT)), key="auto_cfg_limit")
+    with config_cols[3]:
+        auto_language = st.selectbox("Language", ["fr", "en"], index=0 if status.get("language", "fr") == "fr" else 1, key="auto_cfg_language")
+    with config_cols[4]:
+        auto_cron = st.text_input("Cron", value=status.get("cron_expression", settings.AUTO_MODE_CRON), key="auto_cfg_cron")
+
+    action_cols = st.columns([1, 1, 1.5])
+    with action_cols[0]:
+        auto_enabled = st.checkbox("Auto mode enabled", value=bool(status.get("enabled")), key="auto_cfg_enabled")
+    with action_cols[1]:
+        run_dry = st.checkbox("Dry run now", value=False, key="auto_cfg_dry")
+    with action_cols[2]:
+        st.caption("Default every 2 days cron: `0 9 */2 * *`")
+
+    button_cols = st.columns(2)
+    with button_cols[0]:
+        if st.button("Save automation config", use_container_width=True):
+            scheduler_service.update_auto_schedule(
+                cron_expression=auto_cron,
+                locations=auto_locations,
+                categories=auto_categories,
+                limit=int(auto_limit),
+                language=auto_language,
+                enabled=auto_enabled,
+            )
+            st.success("Automation configuration updated.")
+            st.rerun()
+    with button_cols[1]:
+        if st.button("Run autonomous outreach now", type="primary", use_container_width=True):
+            summary = scheduler_service.run_auto_outreach_now(simulate=run_dry)
+            st.session_state["last_auto_outreach_summary"] = summary
+            st.success(
+                f"Run complete. leads_found={summary.get('leads_found', 0)} "
+                f"email_sent={summary.get('email_sent', 0)} sms_sent={summary.get('sms_sent', 0)} "
+                f"skipped={summary.get('skipped', 0)} failed={summary.get('failed', 0)}"
+            )
+
+    if status.get("last_error"):
+        st.warning(f"Last error: {status.get('last_error')}")
+
+    render_simple_auto_outreach_flow()
+
+    render_section("Reports", "Execution History", "Each autonomous run saves a simple report and a per-lead result file.")
+    report_rows = report_service.list_reports(limit=15)
+    if report_rows:
+        reports_df = pd.DataFrame(report_rows)
+        st.dataframe(reports_df, use_container_width=True)
+        selected_report_path = st.selectbox("Open report", [row["path"] for row in report_rows], format_func=lambda path: Path(path).name)
+        report_payload = report_service.load_report(selected_report_path)
+        if report_payload:
+            summary = report_payload.get("summary", {})
+            summary_cols = st.columns(5)
+            with summary_cols[0]:
+                render_metric_card("Leads found", str(summary.get("leads_found", 0)), "Collected and analyzed")
+            with summary_cols[1]:
+                render_metric_card("Emails sent", str(summary.get("email_sent", 0)), "Email channel")
+            with summary_cols[2]:
+                render_metric_card("SMS sent", str(summary.get("sms_sent", 0)), "SMS fallback")
+            with summary_cols[3]:
+                render_metric_card("Skipped", str(summary.get("skipped", 0)), "No email and no phone")
+            with summary_cols[4]:
+                render_metric_card("Failed", str(summary.get("failed", 0)), "Execution errors")
+            if report_payload.get("failure_reasons"):
+                st.json(report_payload.get("failure_reasons"))
+            report_results_df = pd.DataFrame(summary.get("results", []))
+            if not report_results_df.empty:
+                st.dataframe(report_results_df, use_container_width=True)
+    else:
+        st.info("No automation report found yet.")
+
+    render_section("Monitoring", "Logs and Lead Summary", "Use this view to monitor the autonomous machine, not to manage each lead manually.")
+    lead_summary = pd.DataFrame(
+        [
+            {
+                "Business": prospect.business_name,
+                "Location": prospect.location,
+                "Channel": prospect.selected_outreach_channel or "",
+                "Outreach Status": prospect.outreach_status or "",
+                "Send Status": prospect.send_status or "",
+                "Last Attempt": format_datetime_label(prospect.last_attempt_at),
+                "Error": prospect.last_send_error or "",
+            }
+            for prospect in get_recent_outreach_prospects(limit=15)
+        ]
+    )
+    if not lead_summary.empty:
+        st.dataframe(lead_summary, use_container_width=True)
+    log_text = read_log_tail()
+    if log_text:
+        with st.expander("Execution logs", expanded=False):
+            st.code(log_text, language="text")
 
 
 def render_search_section():
@@ -232,6 +417,8 @@ def render_lead_console():
         "Email": prospect.email or "",
         "Phone": prospect.phone or "",
         "Recommended Channel": parse_notes(prospect.notes).get("recommended_channel", "unavailable"),
+        "Outreach Channel": prospect.selected_outreach_channel or "",
+        "Outreach Status": prospect.outreach_status or "",
         "Contact Form": parse_notes(prospect.notes).get("contact_form_url", ""),
         "Instagram": parse_notes(prospect.notes).get("instagram_url", ""),
         "Facebook": parse_notes(prospect.notes).get("facebook_url", ""),
@@ -242,7 +429,7 @@ def render_lead_console():
         "Last Error": prospect.last_send_error or "",
         "Mockup URL": prospect.mockup_url or "",
     } for prospect in prospects])
-    edited = st.data_editor(table, hide_index=True, use_container_width=True, key="lead_selection_table", column_config={"Select": st.column_config.CheckboxColumn("Select"), "Priority": st.column_config.NumberColumn("Priority", format="%.2f")}, disabled=["Business", "Country", "Location", "Category", "Priority", "Email", "Phone", "Recommended Channel", "Contact Form", "Instagram", "Facebook", "Send Status", "First Sent", "Last Attempt", "Attempts", "Last Error", "Mockup URL"])
+    edited = st.data_editor(table, hide_index=True, use_container_width=True, key="lead_selection_table", column_config={"Select": st.column_config.CheckboxColumn("Select"), "Priority": st.column_config.NumberColumn("Priority", format="%.2f")}, disabled=["Business", "Country", "Location", "Category", "Priority", "Email", "Phone", "Recommended Channel", "Outreach Channel", "Outreach Status", "Contact Form", "Instagram", "Facebook", "Send Status", "First Sent", "Last Attempt", "Attempts", "Last Error", "Mockup URL"])
     selected_rows = [index for index, row in edited.iterrows() if row["Select"]]
     st.session_state["selected_lead_ids"] = [prospects[index].id for index in selected_rows]
     selected_prospects = [prospect for prospect in prospects if prospect.id in st.session_state["selected_lead_ids"]]
@@ -423,7 +610,7 @@ def render_prospect_summary(prospect, key_prefix: str):
     with cols[0]:
         render_key_value_card("Market Profile", [("Country", f"{prospect.country} - {get_country_display_name(prospect.country)}"), ("Location", prospect.location), ("Category", prospect.category), ("Website", prospect.website or "N/A"), ("Priority", str(round(prospect.priority_score or 0, 2))), ("Send status", get_send_indicator(prospect.send_status))])
     with cols[1]:
-        render_key_value_card("Contact Readiness", [("Email", prospect.email or "N/A"), ("Phone", prospect.phone or "N/A"), ("Recommended channel", notes.get("recommended_channel", "unavailable")), ("Contact form", notes.get("contact_form_url", "N/A")), ("Instagram", notes.get("instagram_url", "N/A")), ("Facebook", notes.get("facebook_url", "N/A")), ("Language", prospect.email_language or "N/A"), ("Estimated price", format_price_range(prospect.estimated_price_min, prospect.estimated_price_max, prospect.country)), ("Mockup", get_mockup_indicator(prospect.mockup_status)), ("Send attempts", str(prospect.send_attempts or 0))])
+        render_key_value_card("Contact Readiness", [("Email", prospect.email or "N/A"), ("Phone", prospect.phone or "N/A"), ("Recommended channel", notes.get("recommended_channel", "unavailable")), ("Selected outreach", prospect.selected_outreach_channel or "N/A"), ("Outreach status", prospect.outreach_status or "N/A"), ("Contact form", notes.get("contact_form_url", "N/A")), ("Instagram", notes.get("instagram_url", "N/A")), ("Facebook", notes.get("facebook_url", "N/A")), ("Language", prospect.email_language or "N/A"), ("Estimated price", format_price_range(prospect.estimated_price_min, prospect.estimated_price_max, prospect.country)), ("Mockup", get_mockup_indicator(prospect.mockup_status)), ("Send attempts", str(prospect.send_attempts or 0))])
     render_mockup_actions(prospect, key_prefix)
 
 
@@ -716,6 +903,14 @@ def get_top_prospects(limit: int = 5):
         db.close()
 
 
+def get_recent_outreach_prospects(limit: int = 15):
+    db = SessionLocal()
+    try:
+        return db.query(Prospect).filter(Prospect.last_attempt_at.isnot(None)).order_by(Prospect.last_attempt_at.desc()).limit(limit).all()
+    finally:
+        db.close()
+
+
 def get_mockup_indicator(status: str | None) -> str:
     normalized = (status or "pending").lower()
     if normalized == "deployed":
@@ -755,6 +950,16 @@ def render_mockup_actions(prospect, key_prefix: str):
     with cols[1]:
         render_copy_link_button(mockup_url, f"{key_prefix}_copy")
     st.caption(mockup_url)
+
+
+def read_log_tail(lines: int = 120) -> str:
+    try:
+        if not settings.LOG_FILE.exists():
+            return ""
+        content = settings.LOG_FILE.read_text(encoding="utf-8", errors="ignore").splitlines()
+        return "\n".join(content[-lines:])
+    except Exception:
+        return ""
 
 
 def run_streamlit_app():

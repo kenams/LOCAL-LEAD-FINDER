@@ -11,6 +11,7 @@ htmlcov/
 data/*.db
 logs/
 exports/
+reports/
 streamlit_stdout.log
 streamlit_stderr.log
 

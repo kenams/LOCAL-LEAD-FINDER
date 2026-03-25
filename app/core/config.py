@@ -57,10 +57,18 @@ class Settings:
 
     # Scheduler
     ENABLE_SCHEDULER: bool = os.getenv("ENABLE_SCHEDULER", "true").lower() == "true"
+    AUTO_MODE_ENABLED: bool = os.getenv("AUTO_MODE_ENABLED", "true").lower() == "true"
+    AUTO_MODE_NAME: str = os.getenv("AUTO_MODE_NAME", "Auto Outreach")
+    AUTO_MODE_CRON: str = os.getenv("AUTO_MODE_CRON", "0 9 */2 * *")
+    AUTO_MODE_LOCATIONS: str = os.getenv("AUTO_MODE_LOCATIONS", "Geneva,Sydney")
+    AUTO_MODE_CATEGORIES: str = os.getenv("AUTO_MODE_CATEGORIES", "coiffeur")
+    AUTO_MODE_LIMIT: int = int(os.getenv("AUTO_MODE_LIMIT", 10))
+    AUTO_MODE_LANGUAGE: str = os.getenv("AUTO_MODE_LANGUAGE", "fr")
 
     # Paths
     BASE_DIR: Path = Path(__file__).parent.parent.parent
     EXPORT_DIR: Path = BASE_DIR / os.getenv("EXPORT_DIR", "exports")
+    REPORT_DIR: Path = BASE_DIR / os.getenv("REPORT_DIR", "reports")
     LOG_DIR: Path = BASE_DIR / "logs"
     DATA_DIR: Path = BASE_DIR / "data"
 
@@ -105,6 +113,12 @@ class Settings:
     SEND_BATCH_SIZE: int = int(os.getenv("SEND_BATCH_SIZE", 10))
     SEND_ALLOW_RESEND: bool = os.getenv("SEND_ALLOW_RESEND", "false").lower() == "true"
 
+    # SMS sending
+    SMS_PROVIDER: str = os.getenv("SMS_PROVIDER", "").strip().lower()
+    SMS_API_KEY: str = os.getenv("SMS_API_KEY", "")
+    SMS_API_SECRET: str = os.getenv("SMS_API_SECRET", "")
+    SMS_FROM_NUMBER: str = os.getenv("SMS_FROM_NUMBER", "")
+
     def get_smtp_identity_warnings(self) -> list[str]:
         """Return warnings when SMTP sender settings drift from the configured professional email."""
         return build_smtp_identity_warnings(
@@ -127,6 +141,7 @@ class Settings:
 
     # Ensure directories exist
     EXPORT_DIR.mkdir(exist_ok=True)
+    REPORT_DIR.mkdir(exist_ok=True)
     LOG_DIR.mkdir(exist_ok=True)
     DATA_DIR.mkdir(exist_ok=True)
 

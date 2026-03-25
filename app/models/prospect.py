@@ -42,6 +42,8 @@ class Prospect(Base):
     email_subject_en = Column(String)
     email_body_en = Column(Text)
     email_html_en = Column(Text)
+    selected_outreach_channel = Column(String, default="skipped")
+    outreach_status = Column(String, default="NOT_SENT")
     send_status = Column(String, default="NOT_SENT")
     first_sent_at = Column(DateTime)
     last_attempt_at = Column(DateTime)

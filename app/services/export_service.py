@@ -114,6 +114,8 @@ class ExportService:
                     "email_html_en": normalize_sender_content(lead.email_html_en, settings.PROFESSIONAL_EMAIL),
                     "email_short_subject_en": notes_data.get("email_short_subject_en", ""),
                     "email_short_en": notes_data.get("email_short_en", ""),
+                    "selected_outreach_channel": lead.selected_outreach_channel,
+                    "outreach_status": lead.outreach_status,
                     "send_status": lead.send_status,
                     "first_sent_at": lead.first_sent_at.isoformat() if lead.first_sent_at else None,
                     "last_attempt_at": lead.last_attempt_at.isoformat() if lead.last_attempt_at else None,

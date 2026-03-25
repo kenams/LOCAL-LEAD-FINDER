@@ -29,6 +29,7 @@ from app.services.osm_provider import OSMProvider
 from app.services.serpapi_provider import SerpApiProvider
 from app.services.simple_provider import SimpleProvider
 from app.services.site_analyzer import SiteAnalyzer
+from app.services.sms_sender import SMSSender
 
 
 class LeadService:
@@ -46,6 +47,7 @@ class LeadService:
         self.mockup_generator = MockupGenerator()
         self.netlify_deployer = NetlifyDeployer()
         self.netlify_preparer = NetlifyPreparer()
+        self.sms_sender = SMSSender()
 
     def reset_leads(self, clear_search_history: bool = True) -> int:
         """Clear stored leads and optionally search history."""
@@ -94,6 +96,72 @@ class LeadService:
             logger.error(f"Lead collection failed: {e}")
             self._update_search_run(search_run, 0, "FAILED", str(e), diagnostics=search_diagnostics if "search_diagnostics" in locals() else [])
             return 0
+
+    async def auto_outreach(
+        self,
+        locations: List[str],
+        categories: List[str],
+        limit: int,
+        language: str,
+        *,
+        simulate: bool = False,
+        progress_callback: Callable[[int, int, Dict[str, object], Dict[str, object]], None] | None = None,
+    ) -> Dict[str, object]:
+        """Run the simplified search -> generate -> send flow with email-first SMS fallback."""
+        logger.info(f"Starting auto outreach flow: locations={locations}, categories={categories}, limit={limit}, simulate={simulate}")
+        search_run = self._create_search_run(locations, categories, limit, language)
+
+        try:
+            all_leads: List[dict] = []
+            search_diagnostics: List[dict] = []
+
+            for location in locations:
+                for category in categories:
+                    collection_result = await self._collect_location_category(location, category, limit, language)
+                    all_leads.extend(collection_result["leads"])
+                    search_diagnostics.append(collection_result["diagnostics"])
+
+            unique_leads = self.deduplicator.deduplicate_leads(all_leads)
+            processed_leads = await self._process_leads(unique_leads, language)
+            filtered_leads, rejected_leads = self.lead_filter.filter_leads(processed_leads)
+            outreach_ready_leads = await self._prepare_outreach_assets(filtered_leads, language)
+            saved_count, prospect_ids = self._save_leads_with_ids(outreach_ready_leads)
+
+            self._finalize_search_diagnostics(search_diagnostics, processed_leads, outreach_ready_leads, rejected_leads)
+            self._update_search_run(search_run, saved_count, "COMPLETED", diagnostics=search_diagnostics)
+
+            send_summary = self.send_outreach(
+                selected_ids=prospect_ids,
+                limit=limit * max(1, len(locations) * len(categories)),
+                only_not_sent=True,
+                simulate=simulate,
+                allow_resend=settings.SEND_ALLOW_RESEND,
+                progress_callback=progress_callback,
+            )
+            send_summary.update(
+                {
+                    "locations": locations,
+                    "categories": categories,
+                    "leads_found": len(processed_leads),
+                    "leads_saved": saved_count,
+                }
+            )
+            return send_summary
+        except Exception as exc:
+            logger.error(f"Auto outreach failed: {exc}")
+            self._update_search_run(search_run, 0, "FAILED", str(exc), diagnostics=search_diagnostics if "search_diagnostics" in locals() else [])
+            return {
+                "selected": 0,
+                "leads_found": 0,
+                "leads_saved": 0,
+                "email_sent": 0,
+                "sms_sent": 0,
+                "failed": 1,
+                "skipped": 0,
+                "simulated": 0,
+                "results": [],
+                "error": str(exc),
+            }
 
     async def _collect_location_category(self, location: str, category: str, limit: int, fallback_language: str) -> Dict[str, object]:
         """Collect leads for a specific location/category using the provider chain."""
@@ -340,6 +408,8 @@ class LeadService:
                     {
                         "email_language": lead.get("email_language", language),
                         "status": "MAQUETTE_READY",
+                        "selected_outreach_channel": "email" if lead.get("email") else ("sms" if lead.get("phone") else "skipped"),
+                        "outreach_status": "NOT_SENT" if (lead.get("email") or lead.get("phone")) else "SKIPPED",
                         "notes": json.dumps(
                             {
                                 **contact_messages,
@@ -368,9 +438,15 @@ class LeadService:
 
     def _save_leads(self, leads: List[dict]) -> int:
         """Save leads to database."""
+        saved_count, _ = self._save_leads_with_ids(leads)
+        return saved_count
+
+    def _save_leads_with_ids(self, leads: List[dict]) -> tuple[int, List[int]]:
+        """Save leads to database and return affected prospect ids."""
         db = SessionLocal()
         try:
             saved = 0
+            prospect_ids: List[int] = []
             for lead_data in leads:
                 if "detected_issues" in lead_data and isinstance(lead_data["detected_issues"], list):
                     lead_data["detected_issues"] = json.dumps(lead_data["detected_issues"])
@@ -386,18 +462,22 @@ class LeadService:
 
                 if existing:
                     self._apply_lead_data(existing, lead_data)
+                    db.flush()
+                    prospect_ids.append(existing.id)
                 else:
                     prospect = Prospect()
                     self._apply_lead_data(prospect, lead_data)
                     db.add(prospect)
+                    db.flush()
+                    prospect_ids.append(prospect.id)
                     saved += 1
 
             db.commit()
-            return saved
+            return saved, prospect_ids
         except Exception as e:
             db.rollback()
             logger.error(f"Save leads failed: {e}")
-            return 0
+            return 0, []
         finally:
             db.close()
 
@@ -476,6 +556,162 @@ class LeadService:
         except Exception as e:
             db.rollback()
             logger.error(f"Email generation failed: {e}")
+        finally:
+            db.close()
+
+    def send_outreach(
+        self,
+        limit: int | None = None,
+        only_not_sent: bool = True,
+        simulate: bool = False,
+        country: str | None = None,
+        category: str | None = None,
+        min_priority: float | None = None,
+        selected_ids: List[int] | None = None,
+        allow_resend: bool = False,
+        progress_callback: Callable[[int, int, Dict[str, object], Dict[str, object]], None] | None = None,
+    ) -> Dict[str, object]:
+        """Send outreach automatically by email first, then SMS, otherwise skip."""
+        if not settings.AUTO_SEND_ENABLED and not simulate:
+            logger.warning("Automatic outreach send skipped because AUTO_SEND_ENABLED is false")
+            return {
+                "selected": 0,
+                "email_sent": 0,
+                "sms_sent": 0,
+                "failed": 1,
+                "skipped": 0,
+                "simulated": 0,
+                "results": [],
+                "error": "auto_send_disabled",
+            }
+        db = SessionLocal()
+        try:
+            send_limit = max(1, limit or settings.SEND_MAX_PER_RUN)
+            if settings.SEND_BATCH_SIZE > 0:
+                send_limit = min(send_limit, settings.SEND_BATCH_SIZE)
+            query = db.query(Prospect)
+            if selected_ids:
+                query = query.filter(Prospect.id.in_(selected_ids))
+            if country:
+                query = query.filter(Prospect.country == country)
+            if category:
+                query = query.filter(Prospect.category == category)
+            if min_priority is not None:
+                query = query.filter(Prospect.priority_score >= min_priority)
+            prospects = (
+                query.order_by(
+                    Prospect.priority_score.desc(),
+                    Prospect.email.isnot(None).desc(),
+                    Prospect.phone.isnot(None).desc(),
+                    Prospect.collected_at.desc(),
+                )
+                .all()
+            )
+            prospects = [prospect for prospect in prospects if self._should_send_prospect(prospect, only_not_sent=only_not_sent, allow_resend=allow_resend)][:send_limit]
+
+            summary = {
+                "selected": len(prospects),
+                "email_sent": 0,
+                "sms_sent": 0,
+                "failed": 0,
+                "skipped": 0,
+                "simulated": 0,
+                "results": [],
+            }
+
+            for index, prospect in enumerate(prospects, 1):
+                self._ensure_email_assets(prospect)
+                notes_payload = self._ensure_contact_strategy_assets(db, prospect)
+                channel = self._select_outreach_channel(prospect, notes_payload)
+                recipient = ""
+                error = ""
+                simulated_result = False
+
+                if channel == "email":
+                    prepared_email = self.email_sender.prepare_email(prospect)
+                    email_result = self.email_sender.send_prepared_email(prepared_email, simulate=simulate)
+                    recipient = prepared_email.actual_recipient
+                    error = email_result.error
+                    simulated_result = email_result.simulated
+                    self._apply_outreach_result(
+                        db,
+                        prospect,
+                        channel=channel,
+                        success=email_result.success,
+                        skipped=email_result.skipped,
+                        simulated=email_result.simulated,
+                        error=email_result.error,
+                    )
+                    if email_result.simulated:
+                        summary["simulated"] += 1
+                    elif email_result.success:
+                        summary["email_sent"] += 1
+                    elif email_result.skipped:
+                        summary["skipped"] += 1
+                    else:
+                        summary["failed"] += 1
+                elif channel == "sms":
+                    prepared_sms = self.sms_sender.prepare_sms(prospect)
+                    sms_result = self.sms_sender.send_prepared_sms(prepared_sms, simulate=simulate)
+                    recipient = prepared_sms.actual_recipient
+                    error = sms_result.error
+                    simulated_result = sms_result.simulated
+                    self._apply_outreach_result(
+                        db,
+                        prospect,
+                        channel=channel,
+                        success=sms_result.success,
+                        skipped=sms_result.skipped,
+                        simulated=sms_result.simulated,
+                        error=sms_result.error,
+                    )
+                    if sms_result.simulated:
+                        summary["simulated"] += 1
+                    elif sms_result.success:
+                        summary["sms_sent"] += 1
+                    elif sms_result.skipped:
+                        summary["skipped"] += 1
+                    else:
+                        summary["failed"] += 1
+                else:
+                    error = "no email and no phone"
+                    recipient = ""
+                    self._apply_outreach_result(db, prospect, channel="skipped", success=False, skipped=True, simulated=False, error=error)
+                    summary["skipped"] += 1
+
+                summary["results"].append(
+                    {
+                        "prospect_id": prospect.id,
+                        "business_name": prospect.business_name,
+                        "location": prospect.location,
+                        "channel_used": prospect.selected_outreach_channel,
+                        "recipient_used": recipient,
+                        "send_result": prospect.send_status,
+                        "error": error,
+                        "simulated": simulated_result,
+                    }
+                )
+
+                db.commit()
+                if progress_callback:
+                    progress_callback(index, len(prospects), summary["results"][-1], summary)
+                if index < len(prospects) and not simulate and settings.SEND_DELAY_SECONDS > 0:
+                    time.sleep(settings.SEND_DELAY_SECONDS)
+
+            return summary
+        except Exception as exc:
+            db.rollback()
+            logger.error(f"Auto outreach sending batch failed: {exc}")
+            return {
+                "selected": 0,
+                "email_sent": 0,
+                "sms_sent": 0,
+                "failed": 1,
+                "skipped": 0,
+                "simulated": 0,
+                "results": [],
+                "error": str(exc),
+            }
         finally:
             db.close()
 
@@ -687,6 +923,8 @@ class LeadService:
             "email_subject_en",
             "email_body_en",
             "email_html_en",
+            "selected_outreach_channel",
+            "outreach_status",
             "send_status",
             "first_sent_at",
             "last_attempt_at",
@@ -776,6 +1014,45 @@ class LeadService:
         prospect.email_body_en = email_en.get("long_body", email_en.get("body", ""))
         prospect.email_html_en = email_en.get("html_body", "")
 
+    def _ensure_contact_strategy_assets(self, db, prospect: Prospect) -> dict:
+        """Ensure stored notes contain the generated SMS and outreach routing assets."""
+        notes_payload = self._load_notes_payload(prospect.notes)
+        if notes_payload.get("sms_message") and notes_payload.get("contact_strategy"):
+            return notes_payload
+
+        lead_dict = {
+            "business_name": prospect.business_name,
+            "category": prospect.category,
+            "location": prospect.location,
+            "country": prospect.country,
+            "currency": prospect.currency,
+            "email_language": prospect.email_language or "fr",
+            "email": prospect.email,
+            "phone": prospect.phone,
+            "contact_form_url": notes_payload.get("contact_form_url", ""),
+            "contact_form_detected": notes_payload.get("contact_form_detected", False),
+            "instagram_url": notes_payload.get("instagram_url", ""),
+            "facebook_url": notes_payload.get("facebook_url", ""),
+            "linkedin_url": notes_payload.get("linkedin_url", ""),
+            "whatsapp_url": notes_payload.get("whatsapp_url", ""),
+            "contact_extraction": notes_payload.get("contact_extraction", {}),
+            "email_body_fr": prospect.email_body_fr,
+            "email_body_en": prospect.email_body_en,
+            "email_short_subject_fr": notes_payload.get("email_short_subject_fr", ""),
+            "email_short_fr": notes_payload.get("email_short_fr", ""),
+            "email_short_subject_en": notes_payload.get("email_short_subject_en", ""),
+            "email_short_en": notes_payload.get("email_short_en", ""),
+            "follow_ups_fr": notes_payload.get("follow_ups_fr", {}),
+            "follow_ups_en": notes_payload.get("follow_ups_en", {}),
+            "estimated_price_min": prospect.estimated_price_min,
+            "estimated_price_max": prospect.estimated_price_max,
+            "mockup_url": prospect.mockup_url,
+        }
+        notes_payload.update(self.contact_strategy.generate_messages(lead_dict))
+        prospect.notes = json.dumps(notes_payload)
+        db.flush()
+        return notes_payload
+
     def _prospect_needs_email_refresh(self, prospect: Prospect) -> bool:
         """Detect whether outreach content is missing or still carries the old sender identity."""
         required_fields = [
@@ -806,13 +1083,71 @@ class LeadService:
             return False
         return True
 
+    def _select_outreach_channel(self, prospect: Prospect, notes_payload: dict) -> str:
+        """Select the automatic outreach channel for a prospect."""
+        if prospect.email:
+            return "email"
+        if prospect.phone:
+            return "sms"
+        return "skipped"
+
+    def _apply_outreach_result(
+        self,
+        db,
+        prospect: Prospect,
+        *,
+        channel: str,
+        success: bool,
+        skipped: bool,
+        simulated: bool,
+        error: str,
+    ) -> None:
+        """Persist send outcomes for automatic email/SMS outreach."""
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        prospect.selected_outreach_channel = channel
+        prospect.last_attempt_at = now
+        prospect.send_attempts = int(prospect.send_attempts or 0) + 1
+
+        if skipped:
+            prospect.outreach_status = "SKIPPED"
+            prospect.send_status = "SKIPPED"
+            prospect.last_send_error = error
+            db.flush()
+            return
+
+        if success and not simulated:
+            if not prospect.first_sent_at:
+                prospect.first_sent_at = now
+            prospect.outreach_status = "SENT"
+            prospect.send_status = "SENT"
+            prospect.last_send_error = ""
+            if prospect.status in {"NEW", "REVIEWED", "MAQUETTE_READY"}:
+                prospect.status = "CONTACTED"
+            db.flush()
+            return
+
+        if success and simulated:
+            prospect.outreach_status = "NOT_SENT"
+            if not prospect.send_status:
+                prospect.send_status = "NOT_SENT"
+            prospect.last_send_error = ""
+            db.flush()
+            return
+
+        prospect.outreach_status = "FAILED"
+        prospect.send_status = "FAILED"
+        prospect.last_send_error = error
+        db.flush()
+
     def _apply_send_result(self, db, prospect: Prospect, prepared, result) -> None:
         """Persist send status updates safely."""
+        prospect.selected_outreach_channel = "email"
         now = datetime.now(timezone.utc).replace(tzinfo=None)
         prospect.last_attempt_at = now
         prospect.send_attempts = int(prospect.send_attempts or 0) + 1
 
         if result.skipped:
+            prospect.outreach_status = "SKIPPED"
             prospect.send_status = "SKIPPED"
             prospect.last_send_error = result.error
             return
@@ -820,6 +1155,7 @@ class LeadService:
         if result.success and not result.simulated and not prepared.is_test_mode:
             if not prospect.first_sent_at:
                 prospect.first_sent_at = now
+            prospect.outreach_status = "SENT"
             prospect.send_status = "SENT"
             prospect.last_send_error = ""
             if prospect.status in {"NEW", "REVIEWED", "MAQUETTE_READY"}:
@@ -827,11 +1163,13 @@ class LeadService:
             return
 
         if result.success and (result.simulated or prepared.is_test_mode):
+            prospect.outreach_status = "NOT_SENT"
             if not prospect.send_status:
                 prospect.send_status = "NOT_SENT"
             prospect.last_send_error = ""
             return
 
+        prospect.outreach_status = "FAILED"
         prospect.send_status = "FAILED"
         prospect.last_send_error = result.error
         db.flush()
@@ -855,6 +1193,9 @@ class LeadService:
                 prospect.status = status
             if send_status:
                 prospect.send_status = send_status
+                prospect.outreach_status = send_status
+                if send_status == "SKIPPED" and not prospect.selected_outreach_channel:
+                    prospect.selected_outreach_channel = "skipped"
             if last_send_error is not None:
                 prospect.last_send_error = last_send_error
             if send_status in {"SKIPPED", "FAILED"}:
