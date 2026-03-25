@@ -121,6 +121,31 @@ def test_filter_auto_mode_contacts_requires_email_and_phone(monkeypatch):
     assert all(lead["rejection_reason"] == "missing_email_or_phone_for_auto_mode" for lead in rejected)
 
 
+def test_filter_auto_mode_contacts_can_supplement_from_processed_pool(monkeypatch):
+    service = LeadService()
+    monkeypatch.setattr("app.services.lead_service.settings.AUTO_MODE_REQUIRE_EMAIL_AND_PHONE", True)
+
+    eligible, rejected = service._filter_auto_mode_contacts(
+        [{"business_name": "Email Only", "email": "lead@example.com", "phone": "", "website": "https://one.test", "location": "Geneva"}],
+        fallback_pool=[
+            {"business_name": "Email Only", "email": "lead@example.com", "phone": "", "website": "https://one.test", "location": "Geneva"},
+            {
+                "business_name": "Full Contact",
+                "email": "hello@example.com",
+                "phone": "+41795551212",
+                "website": "https://two.test",
+                "location": "Geneva",
+                "priority_score": 88,
+                "opportunity_score": 90,
+            },
+        ],
+        target_count=1,
+    )
+
+    assert [lead["business_name"] for lead in eligible] == ["Full Contact"]
+    assert len(rejected) == 1
+
+
 def test_prepare_outreach_assets_skips_mockups_in_auto_mode(monkeypatch):
     service = LeadService()
     monkeypatch.setattr("app.services.lead_service.settings.AUTO_MODE_GENERATE_MOCKUPS", False)

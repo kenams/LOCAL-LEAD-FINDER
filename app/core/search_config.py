@@ -111,6 +111,7 @@ class SearchPlan:
     location_aliases: List[str]
     category_terms: List[str]
     queries: List[str]
+    contact_queries: List[str]
     broadened_queries: List[str]
     generic_queries: List[str]
     osm_tags: List[Dict[str, str]]
@@ -193,6 +194,7 @@ def build_search_plan(location: str, category: str, fallback_language: str = "fr
     country_context = get_country_search_context(country, language)
 
     queries = _build_queries(location_aliases, category_terms, language, settings.SEARCH_QUERIES_PER_COMBO)
+    contact_queries = _build_contact_queries(location_aliases, category_terms, language)
     broadened_queries = _build_broadened_queries(location_aliases, category_terms, language)
     generic_queries = _build_generic_queries(location_aliases, language)
 
@@ -204,6 +206,7 @@ def build_search_plan(location: str, category: str, fallback_language: str = "fr
         location_aliases=location_aliases,
         category_terms=category_terms,
         queries=queries,
+        contact_queries=contact_queries,
         broadened_queries=broadened_queries,
         generic_queries=generic_queries,
         osm_tags=get_osm_tags(category),
@@ -262,6 +265,27 @@ def _build_broadened_queries(location_aliases: List[str], category_terms: List[s
         queries.append(f"{term} {base_location}")
         for generic in generic_terms[:3]:
             queries.append(f"{term} {base_location} {generic}")
+    unique_queries: List[str] = []
+    for query in queries:
+        if query not in unique_queries:
+            unique_queries.append(query)
+    return unique_queries
+
+
+def _build_contact_queries(location_aliases: List[str], category_terms: List[str], language: str) -> List[str]:
+    """Build queries that bias search engines toward contact-rich business websites."""
+    base_location = location_aliases[0]
+    contact_terms = ["contact", "email", "telephone"] if language == "fr" else ["contact", "email", "phone"]
+    website_terms = ["site officiel", "nous contacter"] if language == "fr" else ["official website", "contact us"]
+
+    queries: List[str] = []
+    for term in category_terms[:4]:
+        queries.append(f"{term} {base_location} {contact_terms[0]}")
+        queries.append(f"{term} {base_location} {contact_terms[1]}")
+        queries.append(f"{term} {base_location} {contact_terms[2]}")
+        queries.append(f"{term} {base_location} {website_terms[0]}")
+        queries.append(f"{term} {base_location} {website_terms[1]}")
+
     unique_queries: List[str] = []
     for query in queries:
         if query not in unique_queries:

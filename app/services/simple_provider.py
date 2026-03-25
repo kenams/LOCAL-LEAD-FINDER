@@ -66,7 +66,7 @@ class SimpleProvider(ProviderBase):
         if not provider_result.leads:
             provider_result.notes = "no_live_results"
 
-        provider_result.leads = provider_result.leads[:candidate_limit]
+        provider_result.leads = self._rank_leads(provider_result.leads)[:candidate_limit]
         logger.info(
             f"SimpleProvider kept {len(provider_result.leads)} candidates for {location}/{category} across {len(provider_result.queries_attempted)} queries"
         )
@@ -301,3 +301,16 @@ class SimpleProvider(ProviderBase):
             "forum",
         ]
         return any(term in normalized for term in blocked_terms)
+
+    def _rank_leads(self, leads: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Prefer search results that already expose direct contact details."""
+        return sorted(
+            leads,
+            key=lambda lead: (
+                1 if lead.get("website") else 0,
+                1 if lead.get("email") else 0,
+                1 if lead.get("phone") else 0,
+                len(lead.get("business_name", "")),
+            ),
+            reverse=True,
+        )

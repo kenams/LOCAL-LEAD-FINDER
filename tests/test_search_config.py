@@ -51,6 +51,10 @@ def test_build_search_plan_ch_hair_includes_english_fallbacks():
     lowered_queries = [query.lower() for query in plan.queries]
     assert any("hair salon geneva" in query or "hairdresser geneva" in query for query in lowered_queries)
     assert any("hair salon geneva" in query for query in [query.lower() for query in plan.broadened_queries])
+    contact_queries = [query.lower() for query in plan.contact_queries]
+    assert any("contact" in query for query in contact_queries)
+    assert any("email" in query for query in contact_queries)
+    assert any("telephone" in query for query in contact_queries)
 
 
 def test_osm_tags_for_core_categories():

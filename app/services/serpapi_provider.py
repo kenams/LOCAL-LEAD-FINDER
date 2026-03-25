@@ -3,6 +3,7 @@ SerpApi provider
 """
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List
 from urllib.parse import urlparse
 
@@ -17,6 +18,9 @@ from app.services.provider_base import ProviderBase, SearchProviderResult
 
 class SerpApiProvider(ProviderBase):
     """Provider using SerpApi."""
+
+    EMAIL_PATTERN = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
+    PHONE_PATTERN = re.compile(r"(?:(?:\+|00)?(?:33|41|1|61)\s?(?:\(0\)\s?)?[\d\s().-]{7,16}|0\d(?:[\s().-]*\d){8,10})")
 
     def is_available(self) -> bool:
         return bool(settings.SERPAPI_KEY)
@@ -82,7 +86,10 @@ class SerpApiProvider(ProviderBase):
                             "country": country,
                             "website": website,
                             "address": item.get("address", location),
+                            "email": self._extract_email(item.get("snippet", "")),
+                            "phone": self._extract_phone(item.get("snippet", "")),
                             "source": "serpapi",
+                            "notes": item.get("snippet", ""),
                         }
                     )
                     seen_websites.add(website)
@@ -97,5 +104,26 @@ class SerpApiProvider(ProviderBase):
                     {"query": query, "raw_results": 0, "kept_candidates": 0, "error": str(e)}
                 )
 
-        result.leads = result.leads[:candidate_limit]
+        result.leads = self._rank_leads(result.leads)[:candidate_limit]
         return result
+
+    def _rank_leads(self, leads: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Prefer official sites that already expose direct contact details in the snippet."""
+        return sorted(
+            leads,
+            key=lambda lead: (
+                1 if lead.get("website") else 0,
+                1 if lead.get("email") else 0,
+                1 if lead.get("phone") else 0,
+                len(lead.get("business_name", "")),
+            ),
+            reverse=True,
+        )
+
+    def _extract_email(self, text: str) -> str | None:
+        match = self.EMAIL_PATTERN.search(text or "")
+        return match.group(0) if match else None
+
+    def _extract_phone(self, text: str) -> str | None:
+        match = self.PHONE_PATTERN.search(text or "")
+        return match.group(0).strip(" .-") if match else None

@@ -117,14 +117,24 @@ class LeadService:
 
             for location in locations:
                 for category in categories:
-                    collection_result = await self._collect_location_category(location, category, limit, language)
+                    collection_result = await self._collect_location_category(
+                        location,
+                        category,
+                        limit,
+                        language,
+                        prefer_contact_details=settings.AUTO_MODE_REQUIRE_EMAIL_AND_PHONE,
+                    )
                     all_leads.extend(collection_result["leads"])
                     search_diagnostics.append(collection_result["diagnostics"])
 
             unique_leads = self.deduplicator.deduplicate_leads(all_leads)
             processed_leads = await self._process_leads(unique_leads, language)
             filtered_leads, rejected_leads = self.lead_filter.filter_leads(processed_leads)
-            auto_ready_leads, auto_rejected_leads = self._filter_auto_mode_contacts(filtered_leads)
+            auto_ready_leads, auto_rejected_leads = self._filter_auto_mode_contacts(
+                filtered_leads,
+                fallback_pool=processed_leads,
+                target_count=limit,
+            )
             rejected_leads.extend(auto_rejected_leads)
             outreach_ready_leads = await self._prepare_outreach_assets(auto_ready_leads, language, auto_mode=True)
             saved_count, prospect_ids = self._save_leads_with_ids(outreach_ready_leads)
@@ -198,6 +208,9 @@ class LeadService:
             warnings.append("SMTP is incomplete: email-capable leads will fail with smtp_not_configured.")
         if require_full_contact:
             warnings.append("AUTO_MODE_REQUIRE_EMAIL_AND_PHONE is true: leads missing email or phone will be skipped before outreach.")
+            warnings.append(
+                f"AUTO_MODE_CONTACT_CANDIDATE_MULTIPLIER={settings.AUTO_MODE_CONTACT_CANDIDATE_MULTIPLIER}: auto mode scans more candidates to find full-contact sites."
+            )
         if not sms_enabled:
             warnings.append("AUTO_MODE_SMS_ENABLED is false: phone-only leads will be skipped.")
         elif not settings.SMS_PROVIDER:
@@ -217,6 +230,7 @@ class LeadService:
             "smtp_ready": smtp_ready,
             "sms_enabled": sms_enabled,
             "require_full_contact": require_full_contact,
+            "contact_candidate_multiplier": settings.AUTO_MODE_CONTACT_CANDIDATE_MULTIPLIER,
             "sms_ready": sms_ready,
             "sms_provider": settings.SMS_PROVIDER or "",
             "generate_mockups": generate_mockups,
@@ -224,7 +238,15 @@ class LeadService:
             "warnings": warnings,
         }
 
-    async def _collect_location_category(self, location: str, category: str, limit: int, fallback_language: str) -> Dict[str, object]:
+    async def _collect_location_category(
+        self,
+        location: str,
+        category: str,
+        limit: int,
+        fallback_language: str,
+        *,
+        prefer_contact_details: bool = False,
+    ) -> Dict[str, object]:
         """Collect leads for a specific location/category using the provider chain."""
         plan = build_search_plan(location, category, fallback_language)
         logger.info(
@@ -232,6 +254,13 @@ class LeadService:
         )
 
         candidate_target = max(limit * 2, settings.SEARCH_MAX_RAW_CANDIDATES)
+        primary_queries = plan.queries
+        if prefer_contact_details:
+            candidate_target = max(
+                candidate_target,
+                limit * max(2, settings.AUTO_MODE_CONTACT_CANDIDATE_MULTIPLIER),
+            )
+            primary_queries = list(dict.fromkeys(plan.contact_queries + plan.queries))
         collected_leads: List[dict] = []
         provider_diagnostics: List[dict] = []
 
@@ -242,7 +271,7 @@ class LeadService:
                 limit=limit,
                 candidate_target=candidate_target,
                 provider_diagnostics=provider_diagnostics,
-                search_queries=plan.queries,
+                search_queries=primary_queries,
                 broaden=False,
             )
         )
@@ -283,15 +312,17 @@ class LeadService:
             "market_language_tag": plan.market_language_tag,
             "requested_category": category,
             "translated_terms": plan.category_terms,
+            "contact_queries": plan.contact_queries,
             "location_aliases": plan.location_aliases,
             "osm_tags": plan.osm_tags,
-            "queries": plan.queries,
+            "queries": primary_queries,
             "broadened_queries": plan.broadened_queries,
             "generic_queries": plan.generic_queries,
             "providers": provider_diagnostics,
             "raw_candidates": len(collected_leads),
             "valid_prospects_kept": 0,
             "rejected_after_filter": 0,
+            "prefer_contact_details": prefer_contact_details,
         }
 
         logger.info(
@@ -507,23 +538,68 @@ class LeadService:
 
         return prepared
 
-    def _filter_auto_mode_contacts(self, leads: List[dict]) -> tuple[List[dict], List[dict]]:
+    def _filter_auto_mode_contacts(
+        self,
+        leads: List[dict],
+        *,
+        fallback_pool: List[dict] | None = None,
+        target_count: int | None = None,
+    ) -> tuple[List[dict], List[dict]]:
         """Keep only leads that match the current autonomous contact quality policy."""
         if not settings.AUTO_MODE_REQUIRE_EMAIL_AND_PHONE:
             return leads, []
 
         eligible: List[dict] = []
         rejected: List[dict] = []
+        seen_keys: set[str] = set()
         for lead in leads:
             if lead.get("email") and lead.get("phone"):
                 eligible.append(lead)
+                seen_keys.add(self._build_auto_contact_key(lead))
                 continue
             rejected.append({**lead, "rejection_reason": "missing_email_or_phone_for_auto_mode"})
+
+        desired_count = max(1, target_count or 0)
+        if fallback_pool and len(eligible) < desired_count:
+            supplemental = sorted(
+                fallback_pool,
+                key=lambda lead: (
+                    1 if lead.get("email") else 0,
+                    1 if lead.get("phone") else 0,
+                    float(lead.get("priority_score") or 0),
+                    float(lead.get("opportunity_score") or 0),
+                ),
+                reverse=True,
+            )
+            added = 0
+            for lead in supplemental:
+                lead_key = self._build_auto_contact_key(lead)
+                if lead_key in seen_keys:
+                    continue
+                if not lead.get("website") or not lead.get("email") or not lead.get("phone"):
+                    continue
+                eligible.append(lead)
+                seen_keys.add(lead_key)
+                added += 1
+                if len(eligible) >= desired_count:
+                    break
+            if added:
+                logger.info(f"Auto-mode contact quality filter supplemented {added} full-contact leads from the processed pool")
 
         logger.info(
             f"Auto-mode contact quality filter kept {len(eligible)} leads and rejected {len(rejected)} leads requiring both email and phone"
         )
         return eligible, rejected
+
+    def _build_auto_contact_key(self, lead: dict) -> str:
+        """Build a stable dedupe key for autonomous full-contact selection."""
+        return "|".join(
+            [
+                str(lead.get("business_name", "")).strip().lower(),
+                str(lead.get("website", "")).strip().lower(),
+                str(lead.get("location", "")).strip().lower(),
+            ]
+        )
 
     def _should_generate_mockups(self, auto_mode: bool) -> bool:
         """Only generate mockups in auto mode when explicitly enabled."""
