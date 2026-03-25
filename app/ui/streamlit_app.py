@@ -106,7 +106,7 @@ def render_automation_center():
         render_metric_card("Failed", str(latest_funnel.get("failed", latest_summary.get("failed", 0))), "Execution errors")
 
     render_section("Lead Quality", "Found -> Kept -> Sent", "Use the quality funnel and rejection reasons to understand why leads were dropped.")
-    quality_cols = st.columns(5)
+    quality_cols = st.columns(7)
     with quality_cols[0]:
         render_metric_card("Rejected", str(latest_funnel.get("validation_skipped", latest_summary.get("validation_skipped", 0))), "Rejected before outreach")
     with quality_cols[1]:
@@ -117,6 +117,10 @@ def render_automation_center():
         render_metric_card("Send cap", str(settings.SEND_MAX_PER_RUN), "Current max sends per run")
     with quality_cols[4]:
         render_metric_card("Min score", str(settings.AUTO_MODE_MIN_OPPORTUNITY_SCORE), "Current opportunity threshold")
+    with quality_cols[5]:
+        render_metric_card("Early-stage", str(latest_funnel.get("early_stage_businesses", latest_summary.get("early_stage_businesses", 0))), "Newer or lighter businesses")
+    with quality_cols[6]:
+        render_metric_card("High-opportunity", str(latest_funnel.get("high_opportunity_leads", latest_summary.get("high_opportunity_leads", 0))), "Strong conversion candidates")
 
     validation_reasons = latest_report.get("validation_reasons", {}) if latest_report else {}
     if validation_reasons:
@@ -138,6 +142,8 @@ def render_automation_center():
                 "Validated": row.get("validated_leads", 0),
                 "Ready": row.get("contact_ready", 0),
                 "Saved": row.get("leads_saved", 0),
+                "Early-stage": row.get("early_stage_businesses", 0),
+                "High-opportunity": row.get("high_opportunity_leads", 0),
                 "Emails": row.get("email_sent", 0),
                 "SMS": row.get("sms_sent", 0),
                 "Skipped": row.get("skipped", 0),
@@ -165,7 +171,7 @@ def render_automation_center():
         if report_payload:
             report_summary = report_payload.get("summary", {})
             report_funnel = report_payload.get("quality_funnel", {})
-            funnel_cols = st.columns(6)
+            funnel_cols = st.columns(8)
             with funnel_cols[0]:
                 render_metric_card("Raw", str(report_funnel.get("raw_found", report_summary.get("raw_found", report_summary.get("leads_found", 0)))), "Candidates found")
             with funnel_cols[1]:
@@ -178,6 +184,10 @@ def render_automation_center():
                 render_metric_card("Selected", str(report_funnel.get("selected", report_summary.get("selected", 0))), "Queued to send")
             with funnel_cols[5]:
                 render_metric_card("Sent", str(report_funnel.get("email_sent", report_summary.get("email_sent", 0)) + report_funnel.get("sms_sent", report_summary.get("sms_sent", 0))), "Delivered this run")
+            with funnel_cols[6]:
+                render_metric_card("Early-stage", str(report_funnel.get("early_stage_businesses", report_summary.get("early_stage_businesses", 0))), "Younger-looking businesses")
+            with funnel_cols[7]:
+                render_metric_card("High-opportunity", str(report_funnel.get("high_opportunity_leads", report_summary.get("high_opportunity_leads", 0))), "Best conversion candidates")
             if report_payload.get("validation_reasons"):
                 st.dataframe(
                     pd.DataFrame(
@@ -715,9 +725,9 @@ def render_prospect_summary(prospect, key_prefix: str):
     st.markdown(f'<div class="kah-inline-badges">{badges}</div>', unsafe_allow_html=True)
     cols = st.columns(2)
     with cols[0]:
-        render_key_value_card("Market Profile", [("Country", f"{prospect.country} - {get_country_display_name(prospect.country)}"), ("Location", prospect.location), ("Category", prospect.category), ("Website", prospect.website or "N/A"), ("Priority", str(round(prospect.priority_score or 0, 2))), ("Send status", get_send_indicator(prospect.send_status))])
+        render_key_value_card("Market Profile", [("Country", f"{prospect.country} - {get_country_display_name(prospect.country)}"), ("Location", prospect.location), ("Category", prospect.category), ("Website", prospect.website or "N/A"), ("Priority", str(round(prospect.priority_score or 0, 2))), ("New business", str(round(prospect.new_business_score or 0, 2))), ("Target type", prospect.target_type or "N/A"), ("Send status", get_send_indicator(prospect.send_status))])
     with cols[1]:
-        render_key_value_card("Contact Readiness", [("Email", prospect.email or "N/A"), ("Phone", prospect.phone or "N/A"), ("Recommended channel", notes.get("recommended_channel", "unavailable")), ("Selected outreach", prospect.selected_outreach_channel or "N/A"), ("Outreach status", prospect.outreach_status or "N/A"), ("Contact form", notes.get("contact_form_url", "N/A")), ("Instagram", notes.get("instagram_url", "N/A")), ("Facebook", notes.get("facebook_url", "N/A")), ("Language", prospect.email_language or "N/A"), ("Estimated price", format_price_range(prospect.estimated_price_min, prospect.estimated_price_max, prospect.country)), ("Mockup", get_mockup_indicator(prospect.mockup_status)), ("Send attempts", str(prospect.send_attempts or 0))])
+        render_key_value_card("Contact Readiness", [("Email", prospect.email or "N/A"), ("Phone", prospect.phone or "N/A"), ("Recommended channel", notes.get("recommended_channel", "unavailable")), ("Selected outreach", prospect.selected_outreach_channel or "N/A"), ("Outreach status", prospect.outreach_status or "N/A"), ("Contact form", notes.get("contact_form_url", "N/A")), ("Instagram", notes.get("instagram_url", "N/A")), ("Social-first", "Yes" if prospect.social_first_business else "No"), ("Pages", str(prospect.website_page_count or 0)), ("Booking system", "Yes" if prospect.has_booking_system else "No"), ("SEO foundation", "Yes" if prospect.has_seo_foundation else "No"), ("Modern UI", "Yes" if prospect.has_modern_ui else "No"), ("Language", prospect.email_language or "N/A"), ("Estimated price", format_price_range(prospect.estimated_price_min, prospect.estimated_price_max, prospect.country)), ("Mockup", get_mockup_indicator(prospect.mockup_status)), ("Send attempts", str(prospect.send_attempts or 0))])
     render_mockup_actions(prospect, key_prefix)
 
 
@@ -984,7 +994,7 @@ def get_prospects(country=None, location=None, category=None, status=None, has_e
             query = query.filter(Prospect.send_status == send_status)
         if min_priority is not None:
             query = query.filter(Prospect.priority_score >= min_priority)
-        return query.order_by(Prospect.priority_score.desc(), Prospect.collected_at.desc()).all()
+        return query.order_by(Prospect.priority_score.desc(), Prospect.new_business_score.desc(), Prospect.collected_at.desc()).all()
     finally:
         db.close()
 
@@ -992,7 +1002,7 @@ def get_prospects(country=None, location=None, category=None, status=None, has_e
 def get_top_prospects(limit: int = 5):
     db = SessionLocal()
     try:
-        return db.query(Prospect).filter(Prospect.status.in_(["NEW", "MAQUETTE_READY", "REVIEWED"])).order_by(Prospect.priority_score.desc(), Prospect.opportunity_score.desc(), Prospect.phone.isnot(None).desc()).limit(limit).all()
+        return db.query(Prospect).filter(Prospect.status.in_(["NEW", "MAQUETTE_READY", "REVIEWED"])).order_by(Prospect.priority_score.desc(), Prospect.new_business_score.desc(), Prospect.opportunity_score.desc(), Prospect.phone.isnot(None).desc()).limit(limit).all()
     finally:
         db.close()
 

@@ -27,6 +27,14 @@ class Prospect(Base):
     status = Column(String, default="NEW")  # NEW, REVIEWED, MAQUETTE_READY, CONTACTED, WON, LOST
     opportunity_score = Column(Float)
     site_quality_score = Column(Float)
+    new_business_score = Column(Float)
+    target_type = Column(String)
+    website_page_count = Column(Integer)
+    website_content_length = Column(Integer)
+    has_booking_system = Column(Boolean, default=False)
+    has_seo_foundation = Column(Boolean, default=False)
+    has_modern_ui = Column(Boolean, default=False)
+    social_first_business = Column(Boolean, default=False)
     feasibility = Column(String)  # EASY, MEDIUM, ADVANCED
     estimated_time = Column(String)  # 1-2 days, 3-5 days, 5-10 days
     estimated_price_min = Column(Float)

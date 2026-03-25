@@ -174,6 +174,9 @@ class LeadService:
                     "validation_skipped": len(rejected_leads),
                     "validation_reasons": self._count_rejection_reasons(rejected_leads),
                     "contact_ready": len(auto_ready_leads),
+                    "early_stage_businesses": self._count_target_type(processed_leads, "early_stage_business"),
+                    "growth_opportunities": self._count_target_type(processed_leads, "growth_opportunity"),
+                    "high_opportunity_leads": self._count_high_opportunity_leads(processed_leads),
                     "leads_saved": saved_count,
                 }
 
@@ -195,6 +198,9 @@ class LeadService:
                     "validation_skipped": len(rejected_leads),
                     "validation_reasons": self._count_rejection_reasons(rejected_leads),
                     "contact_ready": len(auto_ready_leads),
+                    "early_stage_businesses": self._count_target_type(processed_leads, "early_stage_business"),
+                    "growth_opportunities": self._count_target_type(processed_leads, "growth_opportunity"),
+                    "high_opportunity_leads": self._count_high_opportunity_leads(processed_leads),
                     "leads_saved": saved_count,
                 }
             )
@@ -209,6 +215,9 @@ class LeadService:
                 "validated_leads": 0,
                 "validation_skipped": 0,
                 "validation_reasons": {},
+                "early_stage_businesses": 0,
+                "growth_opportunities": 0,
+                "high_opportunity_leads": 0,
                 "leads_saved": 0,
                 "email_sent": 0,
                 "sms_sent": 0,
@@ -474,6 +483,8 @@ class LeadService:
                     lead.get("website", ""),
                     country=lead.get("country", "FR"),
                     language=lead.get("email_language", language),
+                    reviews_count=lead.get("reviews_count"),
+                    instagram_url=lead.get("instagram_url"),
                 )
                 lead.update(analysis)
 
@@ -583,6 +594,14 @@ class LeadService:
                                 "email_short_en": lead.get("email_short_en", ""),
                                 "follow_ups_fr": lead.get("follow_ups_fr", {}),
                                 "follow_ups_en": lead.get("follow_ups_en", {}),
+                                "new_business_score": lead.get("new_business_score", 0),
+                                "target_type": lead.get("target_type", ""),
+                                "website_page_count": lead.get("website_page_count", 0),
+                                "website_content_length": lead.get("website_content_length", 0),
+                                "has_booking_system": bool(lead.get("has_booking_system")),
+                                "has_seo_foundation": bool(lead.get("has_seo_foundation")),
+                                "has_modern_ui": bool(lead.get("has_modern_ui")),
+                                "social_first_business": bool(lead.get("social_first_business")),
                             }
                         ),
                     }
@@ -623,6 +642,7 @@ class LeadService:
                 key=lambda lead: (
                     1 if lead.get("email") else 0,
                     1 if lead.get("phone") else 0,
+                    float(lead.get("new_business_score") or 0),
                     float(lead.get("priority_score") or 0),
                     float(lead.get("opportunity_score") or 0),
                 ),
@@ -666,6 +686,18 @@ class LeadService:
             if reason:
                 reasons[reason] = reasons.get(reason, 0) + 1
         return reasons
+
+    def _count_target_type(self, leads: List[dict], target_type: str) -> int:
+        """Count analyzed leads matching one target profile."""
+        return sum(1 for lead in leads if str(lead.get("target_type") or "").strip() == target_type)
+
+    def _count_high_opportunity_leads(self, leads: List[dict]) -> int:
+        """Count leads that should be prioritized immediately."""
+        return sum(
+            1
+            for lead in leads
+            if float(lead.get("opportunity_score") or 0) >= 75 or float(lead.get("new_business_score") or 0) >= 60
+        )
 
     def _should_generate_mockups(self, auto_mode: bool) -> bool:
         """Only generate mockups in auto mode when explicitly enabled."""
@@ -844,6 +876,7 @@ class LeadService:
             prospects = (
                 query.order_by(
                     Prospect.priority_score.desc(),
+                    Prospect.new_business_score.desc(),
                     Prospect.email.isnot(None).desc(),
                     Prospect.phone.isnot(None).desc(),
                     Prospect.collected_at.desc(),
@@ -990,6 +1023,7 @@ class LeadService:
             prospects = (
                 query.order_by(
                     Prospect.priority_score.desc(),
+                    Prospect.new_business_score.desc(),
                     Prospect.email.isnot(None).desc(),
                     Prospect.collected_at.desc(),
                 )
@@ -1155,6 +1189,14 @@ class LeadService:
             "status",
             "opportunity_score",
             "site_quality_score",
+            "new_business_score",
+            "target_type",
+            "website_page_count",
+            "website_content_length",
+            "has_booking_system",
+            "has_seo_foundation",
+            "has_modern_ui",
+            "social_first_business",
             "feasibility",
             "estimated_time",
             "estimated_price_min",
@@ -1224,9 +1266,18 @@ class LeadService:
         niche_bonus = 0
         if settings.PRIORITY_NICHES_ENABLED:
             niche_bonus = self.PRIORITY_NICHE_BONUSES.get(canonicalize_category(str(lead.get("category", ""))), 0)
+        new_business_score = float(lead.get("new_business_score") or 0)
+        new_business_bonus = new_business_score * 0.45
+        target_type_bonus = 0
+        if lead.get("target_type") == "early_stage_business":
+            target_type_bonus += 8
+        elif lead.get("target_type") == "growth_opportunity":
+            target_type_bonus += 4
+        if lead.get("social_first_business"):
+            target_type_bonus += 5
         price_anchor = float(lead.get("estimated_price_max") or 0) / 250.0
         return round(
-            opportunity * country_weight + contact_bonus + quality_bonus + niche_bonus + price_anchor - contact_penalty - issues_penalty,
+            opportunity * country_weight + contact_bonus + quality_bonus + niche_bonus + new_business_bonus + target_type_bonus + price_anchor - contact_penalty - issues_penalty,
             2,
         )
 

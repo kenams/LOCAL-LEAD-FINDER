@@ -16,6 +16,9 @@ def test_report_service_saves_and_lists_reports(monkeypatch, tmp_path: Path):
             "validated_leads": 3,
             "validation_skipped": 2,
             "validation_reasons": {"no website": 1, "no contact method": 1},
+            "early_stage_businesses": 2,
+            "growth_opportunities": 1,
+            "high_opportunity_leads": 3,
             "email_sent": 2,
             "sms_sent": 1,
             "skipped": 1,
@@ -37,8 +40,10 @@ def test_report_service_saves_and_lists_reports(monkeypatch, tmp_path: Path):
     assert reports[0]["raw_found"] == 5
     assert reports[0]["validated_leads"] == 3
     assert reports[0]["contact_ready"] == 0
+    assert reports[0]["early_stage_businesses"] == 2
     payload = service.load_report(paths["json_path"])
     assert payload["summary"]["email_sent"] == 2
     assert payload["quality_funnel"]["raw_found"] == 5
+    assert payload["quality_funnel"]["high_opportunity_leads"] == 3
     assert payload["validation_reasons"]["no website"] == 1
     assert payload["failure_reasons"]["smtp_not_configured"] == 1
