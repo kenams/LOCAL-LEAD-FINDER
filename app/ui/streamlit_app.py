@@ -66,6 +66,28 @@ def render_automation_center():
     with status_cols[5]:
         render_metric_card("Report status", report_status, "Latest report availability")
 
+    catchup_status = get_latest_catchup_status()
+    render_section("Catch-up", "Missed Morning Recovery", "Automatic recovery check that runs 30 minutes after sign-in when no report exists yet for the day.")
+    catchup_cols = st.columns(4)
+    with catchup_cols[0]:
+        render_metric_card("Catch-up mode", "ON", "Active through Windows logon startup")
+    with catchup_cols[1]:
+        render_metric_card("Last check", format_datetime_label(catchup_status.get("last_check")), "Latest delayed login check")
+    with catchup_cols[2]:
+        render_metric_card("Last result", catchup_status.get("status", "NEVER"), "Skipped, launched or failed")
+    with catchup_cols[3]:
+        render_metric_card("Reason", catchup_status.get("reason", "No catch-up log yet"), "Why it ran or skipped")
+    if catchup_status.get("log_excerpt"):
+        with st.expander("Catch-up log", expanded=False):
+            st.text_area(
+                "Catch-up output",
+                value=catchup_status.get("log_excerpt", ""),
+                height=180,
+                key="catchup_log_output",
+                disabled=True,
+                label_visibility="collapsed",
+            )
+
     render_section("Last Run", "Latest Summary", "Key results from the most recent autonomous outreach run.")
     summary_cols = st.columns(7)
     with summary_cols[0]:
@@ -877,6 +899,8 @@ def build_outreach_preview(prospect, notes_data: dict, lang: str, outreach_asset
 def format_datetime_label(value) -> str:
     if not value:
         return "Never"
+    if isinstance(value, (int, float)):
+        return pd.to_datetime(value, unit="s").strftime("%Y-%m-%d %H:%M")
     if hasattr(value, "strftime"):
         return value.strftime("%Y-%m-%d %H:%M")
     return str(value)
@@ -1030,6 +1054,39 @@ def read_log_tail(lines: int = 120) -> str:
         return "\n".join(content[-lines:])
     except Exception:
         return ""
+
+
+def get_latest_catchup_status() -> dict[str, str]:
+    run_logs_dir = settings.LOG_DIR / "runs"
+    latest_log = next(iter(sorted(run_logs_dir.glob("startup_catchup_*.log"), reverse=True)), None)
+    if not latest_log or not latest_log.exists():
+        return {}
+
+    try:
+        lines = latest_log.read_text(encoding="utf-8", errors="ignore").splitlines()
+    except Exception:
+        return {"last_check": latest_log.stat().st_mtime, "status": "UNKNOWN", "reason": "could_not_read_log"}
+
+    joined = "\n".join(lines[-40:])
+    status = "UNKNOWN"
+    reason = "catchup_log_detected"
+
+    if any("Skipping startup catch-up because a report already exists for today." in line for line in lines):
+        status = "SKIPPED"
+        reason = "report already exists today"
+    elif any("No report found for today. Launching autonomous outreach catch-up run." in line for line in lines):
+        status = "LAUNCHED"
+        reason = "missed run recovered after sign-in"
+    elif any("Startup catch-up exit code:" in line for line in lines):
+        status = "COMPLETED"
+        reason = next((line.replace("Startup catch-up exit code:", "exit code").strip() for line in lines if "Startup catch-up exit code:" in line), "completed")
+
+    return {
+        "last_check": latest_log.stat().st_mtime,
+        "status": status,
+        "reason": reason,
+        "log_excerpt": joined,
+    }
 
 
 def persist_runtime_config(updates: dict[str, object]) -> None:
