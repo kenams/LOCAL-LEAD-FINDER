@@ -179,9 +179,14 @@ def render_automation_center():
         st.info("No report saved yet.")
 
     render_section("Logs", "Execution Logs", "Tail of the application log for quick troubleshooting.")
+    log_controls = st.columns([1.2, 2.8])
+    with log_controls[0]:
+        log_height = st.select_slider("Log height", options=[180, 260, 360, 520, 720], value=260, key="log_height")
+    with log_controls[1]:
+        st.caption("Reduce or expand the log panel depending on how much troubleshooting context you need.")
     log_text = read_log_tail()
     if log_text:
-        st.code(log_text, language="text")
+        st.text_area("Log output", value=log_text, height=log_height, key="log_output", disabled=True, label_visibility="collapsed")
     else:
         st.info("No logs available yet.")
 
