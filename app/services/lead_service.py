@@ -84,7 +84,7 @@ class LeadService:
             unique_leads = self.deduplicator.deduplicate_leads(all_leads)
             processed_leads = await self._process_leads(unique_leads, language)
             filtered_leads, rejected_leads = self.lead_filter.filter_leads(processed_leads)
-            outreach_ready_leads = await self._prepare_outreach_assets(filtered_leads, language)
+            outreach_ready_leads = await self._prepare_outreach_assets(filtered_leads, language, auto_mode=False)
             saved_count = self._save_leads(outreach_ready_leads)
 
             self._finalize_search_diagnostics(search_diagnostics, processed_leads, outreach_ready_leads, rejected_leads)
@@ -124,7 +124,7 @@ class LeadService:
             unique_leads = self.deduplicator.deduplicate_leads(all_leads)
             processed_leads = await self._process_leads(unique_leads, language)
             filtered_leads, rejected_leads = self.lead_filter.filter_leads(processed_leads)
-            outreach_ready_leads = await self._prepare_outreach_assets(filtered_leads, language)
+            outreach_ready_leads = await self._prepare_outreach_assets(filtered_leads, language, auto_mode=True)
             saved_count, prospect_ids = self._save_leads_with_ids(outreach_ready_leads)
 
             self._finalize_search_diagnostics(search_diagnostics, processed_leads, outreach_ready_leads, rejected_leads)
@@ -162,6 +162,40 @@ class LeadService:
                 "results": [],
                 "error": str(exc),
             }
+
+    def get_auto_outreach_preflight(self, *, simulate: bool = False) -> Dict[str, object]:
+        """Return a lightweight configuration snapshot before one-shot auto runs."""
+        warnings = list(settings.get_smtp_identity_warnings())
+        smtp_ready = self.email_sender.is_configured()
+        sms_ready = self.sms_sender.is_configured()
+        generate_mockups = self._should_generate_mockups(auto_mode=True)
+        deploy_mockups = self._should_deploy_mockups(auto_mode=True)
+
+        if not settings.AUTO_SEND_ENABLED and not simulate:
+            warnings.append("AUTO_SEND_ENABLED is false: real delivery is disabled for this run.")
+        if not smtp_ready:
+            warnings.append("SMTP is incomplete: email-capable leads will fail with smtp_not_configured.")
+        if not settings.SMS_PROVIDER:
+            warnings.append("SMS provider is not configured: phone-only leads will fail with sms_provider_not_configured.")
+        elif settings.SMS_PROVIDER != "twilio":
+            warnings.append(
+                f"SMS provider '{settings.SMS_PROVIDER}' is unsupported: phone-only leads will fail with sms_provider_unsupported."
+            )
+        elif not sms_ready:
+            warnings.append("SMS credentials are incomplete: phone-only leads will fail with sms_not_configured.")
+        if deploy_mockups and not settings.NETLIFY_TOKEN:
+            warnings.append("AUTO_MODE_DEPLOY_MOCKUPS is enabled but NETLIFY_TOKEN is missing: mockup deployment will fail.")
+
+        return {
+            "auto_send_enabled": settings.AUTO_SEND_ENABLED,
+            "simulate": simulate,
+            "smtp_ready": smtp_ready,
+            "sms_ready": sms_ready,
+            "sms_provider": settings.SMS_PROVIDER or "",
+            "generate_mockups": generate_mockups,
+            "deploy_mockups": deploy_mockups,
+            "warnings": warnings,
+        }
 
     async def _collect_location_category(self, location: str, category: str, limit: int, fallback_language: str) -> Dict[str, object]:
         """Collect leads for a specific location/category using the provider chain."""
@@ -337,38 +371,48 @@ class LeadService:
 
         return processed
 
-    async def _prepare_outreach_assets(self, leads: List[dict], language: str) -> List[dict]:
+    async def _prepare_outreach_assets(self, leads: List[dict], language: str, *, auto_mode: bool = False) -> List[dict]:
         """Generate mockups, deploy them and build outreach assets only for qualified leads."""
         prepared: List[dict] = []
+        generate_mockups = self._should_generate_mockups(auto_mode)
+        deploy_mockups = self._should_deploy_mockups(auto_mode)
 
         for lead in leads:
             try:
-                mockup_path = self.mockup_generator.generate_mockup(
-                    lead.get("business_name", ""),
-                    lead.get("category", ""),
-                    lead.get("location", ""),
-                    language=lead.get("email_language", language),
-                    quality_level=settings.MOCKUP_QUALITY_LEVEL,
-                )
-
+                mockup_path = ""
                 netlify_zip = ""
                 deploy_result = {
-                    "status": "pending",
+                    "status": "disabled_auto_mode" if auto_mode else "pending",
                     "mockup_status": "pending",
                     "site_id": "",
                     "deploy_id": "",
-                    "url": mockup_path or "",
+                    "url": "",
                     "error": "",
                 }
-                if mockup_path:
-                    netlify_zip = self.netlify_preparer.prepare_for_deployment(
-                        mockup_path,
+
+                if generate_mockups:
+                    mockup_path = self.mockup_generator.generate_mockup(
                         lead.get("business_name", ""),
+                        lead.get("category", ""),
+                        lead.get("location", ""),
+                        language=lead.get("email_language", language),
+                        quality_level=settings.MOCKUP_QUALITY_LEVEL,
                     )
-                    deploy_result = self.netlify_deployer.deploy_mockup(
-                        mockup_path,
-                        lead.get("business_name", ""),
-                    )
+                    deploy_result["url"] = mockup_path or ""
+                    if mockup_path and deploy_mockups:
+                        netlify_zip = self.netlify_preparer.prepare_for_deployment(
+                            mockup_path,
+                            lead.get("business_name", ""),
+                        )
+                        deploy_result = self.netlify_deployer.deploy_mockup(
+                            mockup_path,
+                            lead.get("business_name", ""),
+                        )
+                    elif auto_mode and not deploy_mockups:
+                        logger.info(f"Skipping Netlify deployment for {lead.get('business_name')} in auto mode")
+                        deploy_result["status"] = "skipped_auto_mode"
+                elif auto_mode:
+                    logger.info(f"Skipping mockup generation for {lead.get('business_name')} in auto mode")
 
                 lead.update(
                     {
@@ -435,6 +479,18 @@ class LeadService:
                 prepared.append(lead)
 
         return prepared
+
+    def _should_generate_mockups(self, auto_mode: bool) -> bool:
+        """Only generate mockups in auto mode when explicitly enabled."""
+        if not auto_mode:
+            return True
+        return settings.AUTO_MODE_GENERATE_MOCKUPS or settings.AUTO_MODE_DEPLOY_MOCKUPS
+
+    def _should_deploy_mockups(self, auto_mode: bool) -> bool:
+        """Only deploy mockups in auto mode when explicitly enabled."""
+        if not auto_mode:
+            return True
+        return settings.AUTO_MODE_DEPLOY_MOCKUPS
 
     def _save_leads(self, leads: List[dict]) -> int:
         """Save leads to database."""

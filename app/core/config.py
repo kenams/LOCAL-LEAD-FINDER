@@ -64,6 +64,8 @@ class Settings:
     AUTO_MODE_CATEGORIES: str = os.getenv("AUTO_MODE_CATEGORIES", "coiffeur")
     AUTO_MODE_LIMIT: int = int(os.getenv("AUTO_MODE_LIMIT", 10))
     AUTO_MODE_LANGUAGE: str = os.getenv("AUTO_MODE_LANGUAGE", "fr")
+    AUTO_MODE_GENERATE_MOCKUPS: bool = os.getenv("AUTO_MODE_GENERATE_MOCKUPS", "false").lower() == "true"
+    AUTO_MODE_DEPLOY_MOCKUPS: bool = os.getenv("AUTO_MODE_DEPLOY_MOCKUPS", "false").lower() == "true"
 
     # Paths
     BASE_DIR: Path = Path(__file__).parent.parent.parent

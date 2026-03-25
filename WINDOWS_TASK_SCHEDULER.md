@@ -34,6 +34,12 @@ Safe dry run:
 python run.py --auto-outreach --dry-run
 ```
 
+Dry run through the wrapper:
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File "C:\Users\kenam\Application-Projet-K\LOCAL LEAD FINDER\scripts\run_auto_outreach.ps1" --dry-run --locations "Geneva" --categories "coiffeur" --limit 1
+```
+
 ## Task Scheduler settings
 
 Create a new task with:
@@ -64,6 +70,10 @@ Before enabling the task, verify:
 - SMTP configuration is complete
 - SMS provider configuration is complete if SMS should be sent
 - `AUTO_SEND_ENABLED=true`
+- `AUTO_MODE_GENERATE_MOCKUPS=false` unless you explicitly want local mockups during auto mode
+- `AUTO_MODE_DEPLOY_MOCKUPS=false` unless you explicitly want Netlify deployment during auto mode
+
+Each one-shot run prints a compact preflight summary into the console and the per-run log file. This makes scheduled-mode diagnosis easier when SMTP, SMS, or mockup deployment are not ready yet.
 
 ## Output locations
 

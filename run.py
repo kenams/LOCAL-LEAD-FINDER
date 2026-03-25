@@ -62,6 +62,22 @@ def print_auto_outreach_summary(summary: dict, report_paths: dict | None = None)
         print(f"Report CSV: {report_paths.get('csv_path', '')}")
 
 
+def print_auto_outreach_preflight(preflight: dict) -> None:
+    """Print a compact configuration check for scheduled one-shot runs."""
+    print(
+        "Auto outreach preflight. "
+        f"auto_send_enabled={preflight.get('auto_send_enabled')} "
+        f"simulate={preflight.get('simulate')} "
+        f"smtp_ready={preflight.get('smtp_ready')} "
+        f"sms_ready={preflight.get('sms_ready')} "
+        f"sms_provider={preflight.get('sms_provider') or 'none'} "
+        f"generate_mockups={preflight.get('generate_mockups')} "
+        f"deploy_mockups={preflight.get('deploy_mockups')}"
+    )
+    for warning in preflight.get("warnings", []):
+        print(f"WARNING: {warning}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Local Lead Finder")
     parser.add_argument("--collect", action="store_true", help="Run lead collection")
@@ -135,6 +151,7 @@ def main() -> int:
     if args.auto_outreach:
         locations = [item.strip() for item in args.locations.split(",")] if args.locations else ["Geneva"]
         categories = [item.strip() for item in args.categories.split(",")] if args.categories else ["coiffeur"]
+        print_auto_outreach_preflight(lead_service.get_auto_outreach_preflight(simulate=simulate_mode))
         summary = asyncio.run(
             lead_service.auto_outreach(
                 locations=locations,

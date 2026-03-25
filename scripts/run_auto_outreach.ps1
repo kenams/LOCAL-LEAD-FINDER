@@ -1,3 +1,5 @@
+$CliArgs = @($args)
+
 $ErrorActionPreference = "Stop"
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -21,7 +23,11 @@ $LogFile = Join-Path $RunLogsDir "task_scheduler_$Timestamp.log"
 Write-Output "Starting auto outreach run from $ProjectRoot" | Tee-Object -FilePath $LogFile -Append
 Write-Output "Using Python: $PythonExe" | Tee-Object -FilePath $LogFile -Append
 
-& $PythonExe "run.py" "--auto-outreach" 2>&1 | Tee-Object -FilePath $LogFile -Append
+if ($CliArgs.Length -gt 0) {
+    Write-Output "Additional CLI args: $($CliArgs -join ' ')" | Tee-Object -FilePath $LogFile -Append
+}
+
+& $PythonExe "run.py" "--auto-outreach" @CliArgs 2>&1 | Tee-Object -FilePath $LogFile -Append
 $ExitCode = $LASTEXITCODE
 
 Write-Output "Auto outreach exit code: $ExitCode" | Tee-Object -FilePath $LogFile -Append
