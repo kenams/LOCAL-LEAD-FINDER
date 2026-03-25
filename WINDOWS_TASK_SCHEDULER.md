@@ -12,6 +12,12 @@ Use the PowerShell wrapper:
 powershell.exe -ExecutionPolicy Bypass -File "C:\Users\kenam\Application-Projet-K\LOCAL LEAD FINDER\scripts\run_auto_outreach.ps1"
 ```
 
+For a live low-volume rollout on Windows, use the production wrapper:
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File "C:\Users\kenam\Application-Projet-K\LOCAL LEAD FINDER\scripts\run_auto_outreach_prod.ps1" --locations "Geneva" --categories "coiffeur" --limit 1
+```
+
 ## What the wrapper does
 
 - switches to the project root
@@ -19,6 +25,13 @@ powershell.exe -ExecutionPolicy Bypass -File "C:\Users\kenam\Application-Projet-
 - runs `python run.py --auto-outreach`
 - writes a dedicated log file in `logs\runs\`
 - exits with the Python process exit code
+
+The production wrapper additionally forces safe rollout settings:
+
+- `AUTO_SEND_ENABLED=true`
+- `SEND_MAX_PER_RUN=1`
+- `SEND_BATCH_SIZE=1`
+- mockup generation and Netlify deployment disabled
 
 ## One-shot CLI commands
 
