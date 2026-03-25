@@ -295,6 +295,27 @@ def render_automation_center():
             use_container_width=True,
         )
 
+    render_section("Warm Leads", "Top Warm Leads", "Direct view of leads that already replied, showed interest or converted.")
+    warm_leads = pd.DataFrame(
+        [
+            {
+                "Business": prospect.business_name,
+                "Location": prospect.location,
+                "Offer": prospect.selected_offer_type or "",
+                "Response": prospect.response_status or "NO_RESPONSE",
+                "Lifecycle": prospect.status or "",
+                "Potential value": float(prospect.potential_deal_value or 0.0),
+                "Replied at": format_datetime_label(prospect.replied_at),
+                "Email": prospect.email or "",
+            }
+            for prospect in get_warm_prospects(limit=12)
+        ]
+    )
+    if not warm_leads.empty:
+        st.dataframe(warm_leads, hide_index=True, use_container_width=True)
+    else:
+        st.info("No warm leads yet. Mark replies from Debug / Manual Mode when they come in.")
+
     render_section("Configuration", "Minimal Automation Config", "Adjust the autonomous schedule, scope and runtime settings from one small panel.")
     st.caption("Recommended production rhythm: `0 9,18 * * *` with `5` sends per run for a target of `10` sends per day.")
     config_cols = st.columns([1.2, 1.2, 0.8, 0.8, 1.2])
@@ -1128,6 +1149,24 @@ def get_recent_outreach_prospects(limit: int = 15):
     db = SessionLocal()
     try:
         return db.query(Prospect).filter(Prospect.last_attempt_at.isnot(None)).order_by(Prospect.last_attempt_at.desc()).limit(limit).all()
+    finally:
+        db.close()
+
+
+def get_warm_prospects(limit: int = 12):
+    db = SessionLocal()
+    try:
+        return (
+            db.query(Prospect)
+            .filter(Prospect.response_status.in_(["REPLIED", "INTERESTED", "WON", "LOST"]))
+            .order_by(
+                Prospect.response_status.desc(),
+                Prospect.potential_deal_value.desc().nullslast(),
+                Prospect.replied_at.desc().nullslast(),
+            )
+            .limit(limit)
+            .all()
+        )
     finally:
         db.close()
 
