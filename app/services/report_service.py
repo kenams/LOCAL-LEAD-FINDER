@@ -12,6 +12,8 @@ import pandas as pd
 
 from app.core.config import settings
 from app.core.logging import logger
+from app.db.session import SessionLocal
+from app.models.prospect import Prospect
 
 
 class ReportService:
@@ -33,6 +35,7 @@ class ReportService:
             "validation_reasons": summary.get("validation_reasons", {}),
             "top_prospects_contacted": self._select_top_prospects(summary.get("results", [])),
             "failure_reasons": self._build_failure_reasons(summary.get("results", [])),
+            "business_snapshot": self._build_business_snapshot(),
         }
         json_path.write_text(json.dumps(report_payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -71,6 +74,10 @@ class ReportService:
                         "sms_sent": summary.get("sms_sent", 0),
                         "skipped": summary.get("skipped", 0),
                         "failed": summary.get("failed", 0),
+                        "responses": payload.get("business_snapshot", {}).get("responses", 0),
+                        "interested": payload.get("business_snapshot", {}).get("interested", 0),
+                        "won": payload.get("business_snapshot", {}).get("won", 0),
+                        "potential_deal_value": payload.get("business_snapshot", {}).get("potential_deal_value", 0.0),
                     }
                 )
             except Exception as exc:
@@ -118,6 +125,68 @@ class ReportService:
             "sms_sent": int(summary.get("sms_sent", 0) or 0),
             "skipped": int(summary.get("skipped", 0) or 0),
             "failed": int(summary.get("failed", 0) or 0),
+        }
+
+    def _build_business_snapshot(self) -> dict[str, Any]:
+        """Build lightweight business-facing performance metrics from stored prospects."""
+        db = SessionLocal()
+        try:
+            prospects = db.query(Prospect).all()
+            rows = [
+                {
+                    "selected_offer_type": prospect.selected_offer_type or "",
+                    "send_status": prospect.send_status or "",
+                    "response_status": prospect.response_status or "NO_RESPONSE",
+                    "potential_deal_value": float(prospect.potential_deal_value or 0.0),
+                }
+                for prospect in prospects
+            ]
+            return self._build_business_snapshot_from_rows(rows)
+        except Exception as exc:
+            logger.warning(f"Could not build business snapshot: {exc}")
+            return self._build_business_snapshot_from_rows([])
+        finally:
+            db.close()
+
+    def _build_business_snapshot_from_rows(self, rows: list[dict[str, Any]]) -> dict[str, Any]:
+        """Aggregate business metrics that show which offer angles convert better."""
+        def is_sent(row: dict[str, Any]) -> bool:
+            return str(row.get("send_status") or "").upper() == "SENT"
+
+        def response_bucket(row: dict[str, Any]) -> str:
+            return str(row.get("response_status") or "NO_RESPONSE").upper()
+
+        sent_rows = [row for row in rows if is_sent(row)]
+        responses = [row for row in sent_rows if response_bucket(row) in {"REPLIED", "INTERESTED", "WON", "LOST"}]
+        interested = [row for row in sent_rows if response_bucket(row) in {"INTERESTED", "WON"}]
+        won = [row for row in sent_rows if response_bucket(row) == "WON"]
+        potential_deal_value = round(sum(float(row.get("potential_deal_value") or 0.0) for row in sent_rows), 2)
+
+        by_offer: dict[str, dict[str, Any]] = {}
+        for offer_type in ("landing_page", "website"):
+            offer_rows = [row for row in sent_rows if str(row.get("selected_offer_type") or "") == offer_type]
+            offer_responses = [row for row in offer_rows if response_bucket(row) in {"REPLIED", "INTERESTED", "WON", "LOST"}]
+            offer_interested = [row for row in offer_rows if response_bucket(row) in {"INTERESTED", "WON"}]
+            offer_won = [row for row in offer_rows if response_bucket(row) == "WON"]
+            sent_count = len(offer_rows)
+            by_offer[offer_type] = {
+                "sent": sent_count,
+                "responses": len(offer_responses),
+                "interested": len(offer_interested),
+                "won": len(offer_won),
+                "reply_rate": round((len(offer_responses) / sent_count) * 100, 2) if sent_count else 0.0,
+                "potential_deal_value": round(sum(float(row.get("potential_deal_value") or 0.0) for row in offer_rows), 2),
+            }
+
+        sent_count = len(sent_rows)
+        return {
+            "sent": sent_count,
+            "responses": len(responses),
+            "interested": len(interested),
+            "won": len(won),
+            "reply_rate": round((len(responses) / sent_count) * 100, 2) if sent_count else 0.0,
+            "potential_deal_value": potential_deal_value,
+            "by_offer": by_offer,
         }
 
     def _slugify(self, value: str) -> str:

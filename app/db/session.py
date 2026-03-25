@@ -65,6 +65,10 @@ def _ensure_prospect_columns():
         "last_attempt_at": "DATETIME",
         "send_attempts": "INTEGER",
         "last_send_error": "TEXT",
+        "response_status": "VARCHAR",
+        "replied_at": "DATETIME",
+        "potential_deal_value": "FLOAT",
+        "reply_notes": "TEXT",
     }
 
     with engine.connect() as conn:

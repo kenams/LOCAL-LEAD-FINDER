@@ -58,6 +58,10 @@ class Prospect(Base):
     last_attempt_at = Column(DateTime)
     send_attempts = Column(Integer, default=0)
     last_send_error = Column(Text)
+    response_status = Column(String, default="NO_RESPONSE")
+    replied_at = Column(DateTime)
+    potential_deal_value = Column(Float)
+    reply_notes = Column(Text)
 
     mockup_url = Column(String)
     mockup_status = Column(String, default="pending")

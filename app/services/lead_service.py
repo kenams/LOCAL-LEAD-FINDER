@@ -1218,6 +1218,10 @@ class LeadService:
             "last_attempt_at",
             "send_attempts",
             "last_send_error",
+            "response_status",
+            "replied_at",
+            "potential_deal_value",
+            "reply_notes",
             "mockup_url",
             "mockup_status",
             "netlify_site_id",
@@ -1499,8 +1503,11 @@ class LeadService:
         status: str | None = None,
         send_status: str | None = None,
         last_send_error: str | None = None,
+        response_status: str | None = None,
+        potential_deal_value: float | None = None,
+        reply_notes: str | None = None,
     ) -> bool:
-        """Update a prospect status or send status from the UI."""
+        """Update a prospect status, send status or business response tracking from the UI."""
         db = SessionLocal()
         try:
             prospect = db.query(Prospect).filter(Prospect.id == prospect_id).first()
@@ -1516,12 +1523,27 @@ class LeadService:
                     prospect.selected_outreach_channel = "skipped"
             if last_send_error is not None:
                 prospect.last_send_error = last_send_error
+            if response_status:
+                normalized_response = self._normalize_response_status(response_status)
+                prospect.response_status = normalized_response
+                if normalized_response in {"REPLIED", "INTERESTED", "WON", "LOST"}:
+                    prospect.replied_at = datetime.now(timezone.utc).replace(tzinfo=None)
+                if normalized_response == "INTERESTED" and prospect.status not in {"WON", "LOST"}:
+                    prospect.status = "CONTACTED"
+                elif normalized_response == "WON":
+                    prospect.status = "WON"
+                elif normalized_response == "LOST":
+                    prospect.status = "LOST"
+            if potential_deal_value is not None:
+                prospect.potential_deal_value = potential_deal_value
+            if reply_notes is not None:
+                prospect.reply_notes = reply_notes
             if send_status in {"SKIPPED", "FAILED"}:
                 prospect.last_attempt_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
             db.commit()
             logger.info(
-                f"Prospect status updated from UI: prospect_id={prospect_id}, status={prospect.status}, send_status={prospect.send_status}"
+                f"Prospect status updated from UI: prospect_id={prospect_id}, status={prospect.status}, send_status={prospect.send_status}, response_status={prospect.response_status}"
             )
             return True
         except Exception as exc:
@@ -1530,3 +1552,10 @@ class LeadService:
             return False
         finally:
             db.close()
+
+    def _normalize_response_status(self, response_status: str) -> str:
+        """Normalize UI response tracking values."""
+        normalized = (response_status or "NO_RESPONSE").strip().upper().replace(" ", "_")
+        if normalized in {"NO_RESPONSE", "REPLIED", "INTERESTED", "WON", "LOST"}:
+            return normalized
+        return "NO_RESPONSE"

@@ -49,6 +49,7 @@ def render_automation_center():
     latest_report = report_service.load_report(report_rows[0]["path"]) if report_rows else None
     latest_summary = latest_report.get("summary", {}) if latest_report else {}
     latest_funnel = latest_report.get("quality_funnel", {}) if latest_report else {}
+    latest_business = latest_report.get("business_snapshot", {}) if latest_report else {}
     report_status = "READY" if status.get("last_report_path") else "PENDING"
 
     render_section("Automation", "Autonomous Outreach Monitor", "Monitor the autonomous engine, review recent runs, inspect reports and adjust the schedule.")
@@ -240,6 +241,7 @@ def render_automation_center():
                 "Channel": prospect.selected_outreach_channel or "",
                 "Outreach Status": prospect.outreach_status or "",
                 "Send Status": prospect.send_status or "",
+                "Response": prospect.response_status or "NO_RESPONSE",
                 "Last Attempt": format_datetime_label(prospect.last_attempt_at),
                 "Error": prospect.last_send_error or "",
             }
@@ -250,6 +252,48 @@ def render_automation_center():
         st.dataframe(lead_summary, hide_index=True, use_container_width=True)
     else:
         st.info("No recent outreach activity yet.")
+
+    render_section("Business Tracking", "Replies and Offer Performance", "Monitor which offer angle is generating replies and potential deals.")
+    business_cols = st.columns(5)
+    with business_cols[0]:
+        render_metric_card("Sent total", str(latest_business.get("sent", 0)), "All sent outreach tracked")
+    with business_cols[1]:
+        render_metric_card("Replies", str(latest_business.get("responses", 0)), "Any reply received")
+    with business_cols[2]:
+        render_metric_card("Interested", str(latest_business.get("interested", 0)), "Positive buying signal")
+    with business_cols[3]:
+        render_metric_card("Won", str(latest_business.get("won", 0)), "Closed clients")
+    with business_cols[4]:
+        render_metric_card("Potential value", str(latest_business.get("potential_deal_value", 0.0)), "Current tracked pipeline")
+
+    by_offer = latest_business.get("by_offer", {}) if latest_business else {}
+    if by_offer:
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {
+                        "Offer": "Landing page",
+                        "Sent": by_offer.get("landing_page", {}).get("sent", 0),
+                        "Replies": by_offer.get("landing_page", {}).get("responses", 0),
+                        "Interested": by_offer.get("landing_page", {}).get("interested", 0),
+                        "Won": by_offer.get("landing_page", {}).get("won", 0),
+                        "Reply rate %": by_offer.get("landing_page", {}).get("reply_rate", 0.0),
+                        "Potential value": by_offer.get("landing_page", {}).get("potential_deal_value", 0.0),
+                    },
+                    {
+                        "Offer": "Website",
+                        "Sent": by_offer.get("website", {}).get("sent", 0),
+                        "Replies": by_offer.get("website", {}).get("responses", 0),
+                        "Interested": by_offer.get("website", {}).get("interested", 0),
+                        "Won": by_offer.get("website", {}).get("won", 0),
+                        "Reply rate %": by_offer.get("website", {}).get("reply_rate", 0.0),
+                        "Potential value": by_offer.get("website", {}).get("potential_deal_value", 0.0),
+                    },
+                ]
+            ),
+            hide_index=True,
+            use_container_width=True,
+        )
 
     render_section("Configuration", "Minimal Automation Config", "Adjust the autonomous schedule, scope and runtime settings from one small panel.")
     st.caption("Recommended production rhythm: `0 9,18 * * *` with `5` sends per run for a target of `10` sends per day.")
@@ -368,6 +412,8 @@ def render_manual_debug_mode():
                 ("Selected offer", prospect.selected_offer_type or "N/A"),
                 ("Selected outreach", prospect.selected_outreach_channel or "N/A"),
                 ("Outreach status", prospect.outreach_status or "N/A"),
+                ("Response status", prospect.response_status or "NO_RESPONSE"),
+                ("Potential deal", str(prospect.potential_deal_value or 0.0)),
                 ("Recipient", prospect.email or prospect.phone or "Unavailable"),
                 ("Send status", get_send_indicator(prospect.send_status)),
                 ("Last error", prospect.last_send_error or "None"),
@@ -670,6 +716,33 @@ def render_send_panel(prospects, selected_prospects, current_prospect, current_s
         subject, body, _ = build_outreach_preview(prospect, notes, prospect.email_language or "fr", "Primary email")
         with st.expander(f"{prospect.business_name} | {prospect.location} | {get_send_indicator(prospect.send_status)}", expanded=(prospect.id == current_prospect.id)):
             render_key_value_card("Lead Delivery Card", [("Recipient", prospect.email or "No email"), ("Fallback channel", notes.get("recommended_channel", "N/A")), ("Phone", prospect.phone or "N/A"), ("Contact form", notes.get("contact_form_url", "N/A")), ("Instagram", notes.get("instagram_url", "N/A")), ("Facebook", notes.get("facebook_url", "N/A")), ("Subject", subject or "Not generated"), ("First sent", format_datetime_label(prospect.first_sent_at)), ("Last attempt", format_datetime_label(prospect.last_attempt_at)), ("Attempts", str(prospect.send_attempts or 0)), ("Last error", prospect.last_send_error or "None")])
+            tracking_cols = st.columns([1.1, 1.1, 1.1, 1.1, 1.6])
+            with tracking_cols[0]:
+                if st.button("Mark replied", key=f"reply_{prospect.id}", use_container_width=True):
+                    if update_prospect_from_ui(prospect.id, response_status="REPLIED"):
+                        st.success("Lead marked as replied.")
+                        st.rerun()
+            with tracking_cols[1]:
+                if st.button("Interested", key=f"interested_{prospect.id}", use_container_width=True):
+                    if update_prospect_from_ui(prospect.id, response_status="INTERESTED"):
+                        st.success("Lead marked as interested.")
+                        st.rerun()
+            with tracking_cols[2]:
+                if st.button("Won", key=f"won_{prospect.id}", use_container_width=True):
+                    if update_prospect_from_ui(prospect.id, response_status="WON", status="WON"):
+                        st.success("Lead marked as won.")
+                        st.rerun()
+            with tracking_cols[3]:
+                if st.button("Lost", key=f"lost_{prospect.id}", use_container_width=True):
+                    if update_prospect_from_ui(prospect.id, response_status="LOST", status="LOST"):
+                        st.success("Lead marked as lost.")
+                        st.rerun()
+            with tracking_cols[4]:
+                potential_value = st.number_input("Potential deal value", min_value=0.0, value=float(prospect.potential_deal_value or 0.0), step=50.0, key=f"potential_value_{prospect.id}")
+                if st.button("Save deal value", key=f"save_value_{prospect.id}", use_container_width=True):
+                    if update_prospect_from_ui(prospect.id, potential_deal_value=float(potential_value)):
+                        st.success("Potential deal value updated.")
+                        st.rerun()
             if not prospect.email:
                 st.info(f"Send disabled because no email was extracted. Recommended fallback: {notes.get('recommended_channel', 'manual follow-up')}.")
             action_cols = st.columns(6)
@@ -751,7 +824,7 @@ def render_prospect_summary(prospect, key_prefix: str):
     with cols[0]:
         render_key_value_card("Market Profile", [("Country", f"{prospect.country} - {get_country_display_name(prospect.country)}"), ("Location", prospect.location), ("Category", prospect.category), ("Website", prospect.website or "N/A"), ("Priority", str(round(prospect.priority_score or 0, 2))), ("New business", str(round(prospect.new_business_score or 0, 2))), ("Target type", prospect.target_type or "N/A"), ("Send status", get_send_indicator(prospect.send_status))])
     with cols[1]:
-        render_key_value_card("Contact Readiness", [("Email", prospect.email or "N/A"), ("Phone", prospect.phone or "N/A"), ("Recommended channel", notes.get("recommended_channel", "unavailable")), ("Selected offer", prospect.selected_offer_type or "N/A"), ("Selected outreach", prospect.selected_outreach_channel or "N/A"), ("Outreach status", prospect.outreach_status or "N/A"), ("Contact form", notes.get("contact_form_url", "N/A")), ("Instagram", notes.get("instagram_url", "N/A")), ("Social-first", "Yes" if prospect.social_first_business else "No"), ("Pages", str(prospect.website_page_count or 0)), ("Booking system", "Yes" if prospect.has_booking_system else "No"), ("SEO foundation", "Yes" if prospect.has_seo_foundation else "No"), ("Modern UI", "Yes" if prospect.has_modern_ui else "No"), ("Language", prospect.email_language or "N/A"), ("Estimated price", format_price_range(prospect.estimated_price_min, prospect.estimated_price_max, prospect.country)), ("Mockup", get_mockup_indicator(prospect.mockup_status)), ("Send attempts", str(prospect.send_attempts or 0))])
+        render_key_value_card("Contact Readiness", [("Email", prospect.email or "N/A"), ("Phone", prospect.phone or "N/A"), ("Recommended channel", notes.get("recommended_channel", "unavailable")), ("Selected offer", prospect.selected_offer_type or "N/A"), ("Selected outreach", prospect.selected_outreach_channel or "N/A"), ("Outreach status", prospect.outreach_status or "N/A"), ("Response status", prospect.response_status or "NO_RESPONSE"), ("Potential deal", str(prospect.potential_deal_value or 0.0)), ("Contact form", notes.get("contact_form_url", "N/A")), ("Instagram", notes.get("instagram_url", "N/A")), ("Social-first", "Yes" if prospect.social_first_business else "No"), ("Pages", str(prospect.website_page_count or 0)), ("Booking system", "Yes" if prospect.has_booking_system else "No"), ("SEO foundation", "Yes" if prospect.has_seo_foundation else "No"), ("Modern UI", "Yes" if prospect.has_modern_ui else "No"), ("Language", prospect.email_language or "N/A"), ("Estimated price", format_price_range(prospect.estimated_price_min, prospect.estimated_price_max, prospect.country)), ("Mockup", get_mockup_indicator(prospect.mockup_status)), ("Send attempts", str(prospect.send_attempts or 0))])
     render_mockup_actions(prospect, key_prefix)
 
 
@@ -967,8 +1040,25 @@ def execute_ui_send_action(action_name: str, *, selected_ids: list[int], limit: 
     return summary
 
 
-def update_prospect_from_ui(prospect_id: int, *, status: str | None = None, send_status: str | None = None, last_send_error: str | None = None) -> bool:
-    return LeadService().update_prospect_status(prospect_id, status=status, send_status=send_status, last_send_error=last_send_error)
+def update_prospect_from_ui(
+    prospect_id: int,
+    *,
+    status: str | None = None,
+    send_status: str | None = None,
+    last_send_error: str | None = None,
+    response_status: str | None = None,
+    potential_deal_value: float | None = None,
+    reply_notes: str | None = None,
+) -> bool:
+    return LeadService().update_prospect_status(
+        prospect_id,
+        status=status,
+        send_status=send_status,
+        last_send_error=last_send_error,
+        response_status=response_status,
+        potential_deal_value=potential_deal_value,
+        reply_notes=reply_notes,
+    )
 
 
 def get_locations():
