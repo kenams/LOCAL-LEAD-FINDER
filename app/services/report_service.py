@@ -29,6 +29,7 @@ class ReportService:
             "trigger": trigger,
             "schedule_name": schedule_name,
             "summary": summary,
+            "quality_funnel": self._build_quality_funnel(summary),
             "validation_reasons": summary.get("validation_reasons", {}),
             "top_prospects_contacted": self._select_top_prospects(summary.get("results", [])),
             "failure_reasons": self._build_failure_reasons(summary.get("results", [])),
@@ -53,9 +54,12 @@ class ReportService:
                         "generated_at": payload.get("generated_at"),
                         "trigger": payload.get("trigger"),
                         "schedule_name": payload.get("schedule_name"),
+                        "raw_found": summary.get("raw_found", summary.get("leads_found", 0)),
                         "leads_found": summary.get("leads_found", 0),
                         "validated_leads": summary.get("validated_leads", 0),
                         "validation_skipped": summary.get("validation_skipped", 0),
+                        "contact_ready": summary.get("contact_ready", 0),
+                        "leads_saved": summary.get("leads_saved", 0),
                         "email_sent": summary.get("email_sent", 0),
                         "sms_sent": summary.get("sms_sent", 0),
                         "skipped": summary.get("skipped", 0),
@@ -87,6 +91,20 @@ class ReportService:
             if reason:
                 reasons[reason] = reasons.get(reason, 0) + 1
         return reasons
+
+    def _build_quality_funnel(self, summary: dict[str, Any]) -> dict[str, int]:
+        return {
+            "raw_found": int(summary.get("raw_found", summary.get("leads_found", 0)) or 0),
+            "validated_leads": int(summary.get("validated_leads", 0) or 0),
+            "validation_skipped": int(summary.get("validation_skipped", 0) or 0),
+            "contact_ready": int(summary.get("contact_ready", 0) or 0),
+            "leads_saved": int(summary.get("leads_saved", 0) or 0),
+            "selected": int(summary.get("selected", 0) or 0),
+            "email_sent": int(summary.get("email_sent", 0) or 0),
+            "sms_sent": int(summary.get("sms_sent", 0) or 0),
+            "skipped": int(summary.get("skipped", 0) or 0),
+            "failed": int(summary.get("failed", 0) or 0),
+        }
 
     def _slugify(self, value: str) -> str:
         cleaned = "".join(char.lower() if char.isalnum() else "_" for char in value)

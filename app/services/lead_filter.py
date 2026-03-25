@@ -14,7 +14,7 @@ class LeadFilter:
     """Filters leads to keep only high-potential prospects"""
 
     def __init__(self):
-        self.min_opportunity_score = 70
+        self.min_opportunity_score = settings.AUTO_MODE_MIN_OPPORTUNITY_SCORE
         self.min_site_quality_score = 10
         self.placeholder_domains = {"example.com", "example.org", "example.net", "domain.com", "invalid", "localhost"}
 

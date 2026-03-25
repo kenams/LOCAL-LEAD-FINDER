@@ -34,8 +34,11 @@ def test_report_service_saves_and_lists_reports(monkeypatch, tmp_path: Path):
 
     reports = service.list_reports(limit=5)
     assert len(reports) == 1
+    assert reports[0]["raw_found"] == 5
     assert reports[0]["validated_leads"] == 3
+    assert reports[0]["contact_ready"] == 0
     payload = service.load_report(paths["json_path"])
     assert payload["summary"]["email_sent"] == 2
+    assert payload["quality_funnel"]["raw_found"] == 5
     assert payload["validation_reasons"]["no website"] == 1
     assert payload["failure_reasons"]["smtp_not_configured"] == 1

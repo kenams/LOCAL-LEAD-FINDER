@@ -48,6 +48,7 @@ def render_automation_center():
     report_rows = report_service.list_reports(limit=20)
     latest_report = report_service.load_report(report_rows[0]["path"]) if report_rows else None
     latest_summary = latest_report.get("summary", {}) if latest_report else {}
+    latest_funnel = latest_report.get("quality_funnel", {}) if latest_report else {}
     report_status = "READY" if status.get("last_report_path") else "PENDING"
 
     render_section("Automation", "Autonomous Outreach Monitor", "Monitor the autonomous engine, review recent runs, inspect reports and adjust the schedule.")
@@ -66,17 +67,43 @@ def render_automation_center():
         render_metric_card("Report status", report_status, "Latest report availability")
 
     render_section("Last Run", "Latest Summary", "Key results from the most recent autonomous outreach run.")
-    summary_cols = st.columns(5)
+    summary_cols = st.columns(7)
     with summary_cols[0]:
-        render_metric_card("Leads found", str(latest_summary.get("leads_found", 0)), "Collected and analyzed")
+        render_metric_card("Raw found", str(latest_funnel.get("raw_found", latest_summary.get("raw_found", latest_summary.get("leads_found", 0)))), "All raw candidates discovered")
     with summary_cols[1]:
-        render_metric_card("Emails sent", str(latest_summary.get("email_sent", 0)), "Email channel")
+        render_metric_card("Validated", str(latest_funnel.get("validated_leads", latest_summary.get("validated_leads", 0))), "Passed the quality filter")
     with summary_cols[2]:
-        render_metric_card("SMS sent", str(latest_summary.get("sms_sent", 0)), "SMS fallback")
+        render_metric_card("Contact ready", str(latest_funnel.get("contact_ready", latest_summary.get("contact_ready", 0))), "Ready for outreach routing")
     with summary_cols[3]:
-        render_metric_card("Skipped", str(latest_summary.get("skipped", 0)), "No email and no phone")
+        render_metric_card("Saved", str(latest_funnel.get("leads_saved", latest_summary.get("leads_saved", 0))), "Persisted prospects")
     with summary_cols[4]:
-        render_metric_card("Failed", str(latest_summary.get("failed", 0)), "Execution errors")
+        render_metric_card("Emails sent", str(latest_funnel.get("email_sent", latest_summary.get("email_sent", 0))), "Email channel")
+    with summary_cols[5]:
+        render_metric_card("SMS sent", str(latest_funnel.get("sms_sent", latest_summary.get("sms_sent", 0))), "SMS fallback")
+    with summary_cols[6]:
+        render_metric_card("Failed", str(latest_funnel.get("failed", latest_summary.get("failed", 0))), "Execution errors")
+
+    render_section("Lead Quality", "Found -> Kept -> Sent", "Use the quality funnel and rejection reasons to understand why leads were dropped.")
+    quality_cols = st.columns(5)
+    with quality_cols[0]:
+        render_metric_card("Rejected", str(latest_funnel.get("validation_skipped", latest_summary.get("validation_skipped", 0))), "Rejected before outreach")
+    with quality_cols[1]:
+        render_metric_card("Selected", str(latest_funnel.get("selected", latest_summary.get("selected", 0))), "Queued for delivery this run")
+    with quality_cols[2]:
+        render_metric_card("Skipped", str(latest_funnel.get("skipped", latest_summary.get("skipped", 0))), "No usable channel at send time")
+    with quality_cols[3]:
+        render_metric_card("Send cap", str(settings.SEND_MAX_PER_RUN), "Current max sends per run")
+    with quality_cols[4]:
+        render_metric_card("Min score", str(settings.AUTO_MODE_MIN_OPPORTUNITY_SCORE), "Current opportunity threshold")
+
+    validation_reasons = latest_report.get("validation_reasons", {}) if latest_report else {}
+    if validation_reasons:
+        reasons_df = pd.DataFrame(
+            [{"Reason": reason, "Count": count} for reason, count in validation_reasons.items()]
+        ).sort_values(by="Count", ascending=False)
+        st.dataframe(reasons_df, hide_index=True, use_container_width=True)
+    else:
+        st.info("No validation rejections recorded in the latest report.")
 
     render_section("Recent Runs", "Execution History", "A compact history of recent autonomous runs and outcomes.")
     if report_rows:
@@ -85,7 +112,10 @@ def render_automation_center():
                 "Generated": row.get("generated_at"),
                 "Trigger": row.get("trigger"),
                 "Schedule": row.get("schedule_name"),
-                "Leads": row.get("leads_found", 0),
+                "Raw": row.get("raw_found", row.get("leads_found", 0)),
+                "Validated": row.get("validated_leads", 0),
+                "Ready": row.get("contact_ready", 0),
+                "Saved": row.get("leads_saved", 0),
                 "Emails": row.get("email_sent", 0),
                 "SMS": row.get("sms_sent", 0),
                 "Skipped": row.get("skipped", 0),
@@ -111,9 +141,32 @@ def render_automation_center():
                 st.caption(selected_report_path)
         report_payload = report_service.load_report(selected_report_path)
         if report_payload:
+            report_summary = report_payload.get("summary", {})
+            report_funnel = report_payload.get("quality_funnel", {})
+            funnel_cols = st.columns(6)
+            with funnel_cols[0]:
+                render_metric_card("Raw", str(report_funnel.get("raw_found", report_summary.get("raw_found", report_summary.get("leads_found", 0)))), "Candidates found")
+            with funnel_cols[1]:
+                render_metric_card("Validated", str(report_funnel.get("validated_leads", report_summary.get("validated_leads", 0))), "After quality filter")
+            with funnel_cols[2]:
+                render_metric_card("Ready", str(report_funnel.get("contact_ready", report_summary.get("contact_ready", 0))), "Contactable leads")
+            with funnel_cols[3]:
+                render_metric_card("Saved", str(report_funnel.get("leads_saved", report_summary.get("leads_saved", 0))), "Saved to database")
+            with funnel_cols[4]:
+                render_metric_card("Selected", str(report_funnel.get("selected", report_summary.get("selected", 0))), "Queued to send")
+            with funnel_cols[5]:
+                render_metric_card("Sent", str(report_funnel.get("email_sent", report_summary.get("email_sent", 0)) + report_funnel.get("sms_sent", report_summary.get("sms_sent", 0))), "Delivered this run")
+            if report_payload.get("validation_reasons"):
+                st.dataframe(
+                    pd.DataFrame(
+                        [{"Reason": reason, "Count": count} for reason, count in report_payload.get("validation_reasons", {}).items()]
+                    ).sort_values(by="Count", ascending=False),
+                    hide_index=True,
+                    use_container_width=True,
+                )
             if report_payload.get("failure_reasons"):
                 st.json(report_payload.get("failure_reasons"))
-            report_results_df = pd.DataFrame(report_payload.get("summary", {}).get("results", []))
+            report_results_df = pd.DataFrame(report_summary.get("results", []))
             if not report_results_df.empty:
                 st.dataframe(report_results_df, use_container_width=True)
     else:
@@ -152,6 +205,7 @@ def render_automation_center():
         st.info("No recent outreach activity yet.")
 
     render_section("Configuration", "Minimal Automation Config", "Adjust the autonomous schedule, scope and runtime settings from one small panel.")
+    st.caption("Recommended production rhythm: `0 9,18 * * *` with `5` sends per run for a target of `10` sends per day.")
     config_cols = st.columns([1.2, 1.2, 0.8, 0.8, 1.2])
     with config_cols[0]:
         auto_locations = st.text_input("Locations", value=status.get("locations", settings.AUTO_MODE_LOCATIONS), key="auto_cfg_locations")
@@ -163,11 +217,31 @@ def render_automation_center():
         auto_language = st.selectbox("Language", ["fr", "en"], index=0 if status.get("language", "fr") == "fr" else 1, key="auto_cfg_language")
     with config_cols[4]:
         auto_cron = st.text_input("Cron", value=status.get("cron_expression", settings.AUTO_MODE_CRON), key="auto_cfg_cron")
+    runtime_cols = st.columns(4)
+    with runtime_cols[0]:
+        send_max_per_run = st.number_input("Send cap / run", min_value=1, max_value=50, value=int(settings.SEND_MAX_PER_RUN), key="auto_cfg_send_cap")
+    with runtime_cols[1]:
+        send_delay_seconds = st.number_input("Delay between sends", min_value=0.0, max_value=30.0, value=float(settings.SEND_DELAY_SECONDS), step=0.5, key="auto_cfg_send_delay")
+    with runtime_cols[2]:
+        candidate_multiplier = st.number_input("Search depth", min_value=2, max_value=40, value=int(settings.AUTO_MODE_CONTACT_CANDIDATE_MULTIPLIER), key="auto_cfg_candidate_multiplier")
+    with runtime_cols[3]:
+        min_opportunity_score = st.number_input("Min opportunity score", min_value=0, max_value=100, value=int(settings.AUTO_MODE_MIN_OPPORTUNITY_SCORE), key="auto_cfg_min_score")
     config_action_cols = st.columns([1, 2])
     with config_action_cols[0]:
         auto_enabled = st.checkbox("Auto mode enabled", value=bool(status.get("enabled")), key="auto_cfg_enabled")
     with config_action_cols[1]:
         if st.button("Save automation config", use_container_width=True):
+            settings.AUTO_MODE_LOCATIONS = auto_locations
+            settings.AUTO_MODE_CATEGORIES = auto_categories
+            settings.AUTO_MODE_LIMIT = int(auto_limit)
+            settings.AUTO_MODE_LANGUAGE = auto_language
+            settings.AUTO_MODE_CRON = auto_cron
+            settings.AUTO_MODE_ENABLED = auto_enabled
+            settings.SEND_MAX_PER_RUN = int(send_max_per_run)
+            settings.SEND_BATCH_SIZE = int(send_max_per_run)
+            settings.SEND_DELAY_SECONDS = float(send_delay_seconds)
+            settings.AUTO_MODE_CONTACT_CANDIDATE_MULTIPLIER = int(candidate_multiplier)
+            settings.AUTO_MODE_MIN_OPPORTUNITY_SCORE = int(min_opportunity_score)
             scheduler_service.update_auto_schedule(
                 cron_expression=auto_cron,
                 locations=auto_locations,
@@ -175,6 +249,21 @@ def render_automation_center():
                 limit=int(auto_limit),
                 language=auto_language,
                 enabled=auto_enabled,
+            )
+            persist_runtime_config(
+                {
+                    "AUTO_MODE_ENABLED": auto_enabled,
+                    "AUTO_MODE_CRON": auto_cron,
+                    "AUTO_MODE_LOCATIONS": auto_locations,
+                    "AUTO_MODE_CATEGORIES": auto_categories,
+                    "AUTO_MODE_LIMIT": int(auto_limit),
+                    "AUTO_MODE_LANGUAGE": auto_language,
+                    "SEND_MAX_PER_RUN": int(send_max_per_run),
+                    "SEND_BATCH_SIZE": int(send_max_per_run),
+                    "SEND_DELAY_SECONDS": float(send_delay_seconds),
+                    "AUTO_MODE_CONTACT_CANDIDATE_MULTIPLIER": int(candidate_multiplier),
+                    "AUTO_MODE_MIN_OPPORTUNITY_SCORE": int(min_opportunity_score),
+                }
             )
             st.success("Automation configuration updated.")
             st.rerun()
@@ -941,6 +1030,47 @@ def read_log_tail(lines: int = 120) -> str:
         return "\n".join(content[-lines:])
     except Exception:
         return ""
+
+
+def persist_runtime_config(updates: dict[str, object]) -> None:
+    env_path = settings.BASE_DIR / ".env"
+    existing_lines = env_path.read_text(encoding="utf-8").splitlines() if env_path.exists() else []
+    keys = set(updates.keys())
+    new_lines: list[str] = []
+    replaced_keys: set[str] = set()
+
+    for line in existing_lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in line:
+            new_lines.append(line)
+            continue
+        key, _, _ = line.partition("=")
+        key = key.strip()
+        if key in keys:
+            new_lines.append(f"{key}={format_env_value(updates[key])}")
+            replaced_keys.add(key)
+        else:
+            new_lines.append(line)
+
+    for key, value in updates.items():
+        if key not in replaced_keys:
+            new_lines.append(f"{key}={format_env_value(value)}")
+
+    env_path.write_text("\n".join(new_lines).rstrip() + "\n", encoding="utf-8")
+
+
+def format_env_value(value: object) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, float):
+        return f"{value:g}"
+    if isinstance(value, int):
+        return str(value)
+    text = str(value)
+    if any(char in text for char in [' ', '#', '"']):
+        escaped = text.replace('"', '\\"')
+        return f'"{escaped}"'
+    return text
 
 
 def run_streamlit_app():

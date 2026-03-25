@@ -1,6 +1,7 @@
 """
 Tests for lead filtering.
 """
+from app.core.config import settings
 from app.services.lead_filter import LeadFilter
 
 
@@ -40,3 +41,18 @@ def test_validate_after_contact_extraction_rejects_broken_website():
     }
 
     assert lead_filter.validate_after_contact_extraction(lead) == "low_quality_website"
+
+
+def test_filter_uses_configured_min_opportunity_score(monkeypatch):
+    monkeypatch.setattr(settings, "AUTO_MODE_MIN_OPPORTUNITY_SCORE", 60)
+    lead_filter = LeadFilter()
+
+    filtered, rejected = lead_filter.filter_leads(
+        [
+            {"business_name": "Strong Lead", "opportunity_score": 61, "site_quality_score": 40},
+            {"business_name": "Weak Lead", "opportunity_score": 59, "site_quality_score": 40},
+        ]
+    )
+
+    assert [lead["business_name"] for lead in filtered] == ["Strong Lead"]
+    assert rejected[0]["rejection_reason"] == "Opportunity score too low: 59"
