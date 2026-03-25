@@ -167,6 +167,9 @@ class TestEmailGenerator:
         assert "pages plus ciblees" in email["body"]
         assert "preuves et cas clients plus visibles" in email["body"]
 
+        assert "optimisation conversion" in email["follow_ups"]["day_2"]["body"]
+        assert "3 optimisations" in email["follow_ups"]["day_5"]["body"]
+
     def test_email_without_mockup_does_not_force_preview_link(self):
         generator = EmailGenerator()
         prospect = {

@@ -366,7 +366,14 @@ class EmailGenerator:
     def _build_offer_follow_ups(self, prospect: Dict, language: str, offer_type: str) -> Dict[str, Dict[str, str]]:
         business_name = prospect.get("business_name", "")
         signature = get_text_signature(language)
+        strong_site = self._is_already_strong_site(prospect)
         if language == "fr":
+            if strong_site and offer_type == "website":
+                return {
+                    "day_2": {"subject": f"Relance rapide pour {business_name}", "body": f"Bonjour,\n\nJe reviens vers vous concernant l'idee d'optimisation conversion pour {business_name}.\n\nJe pense surtout a des pages plus ciblees, plus de preuve visible et un parcours de contact plus direct.\n\nSi vous voulez, je peux vous envoyer une proposition courte.\n\n{signature}"},
+                    "day_5": {"subject": f"Piste conversion pour {business_name}", "body": f"Bonjour,\n\nJe me permets une derniere relance concernant une version plus ciblee pour mieux convertir sur {business_name}.\n\nSi utile, je peux vous envoyer les 3 optimisations que je prioriserais en premier.\n\n{signature}"},
+                    "day_10": {"subject": f"Dernier message pour {business_name}", "body": f"Bonjour,\n\nDernier message de ma part concernant l'optimisation conversion de votre site.\n\nSi vous voulez, je peux vous envoyer une proposition breve et concrete.\n\n{signature}"},
+                }
             if offer_type == "landing_page":
                 return {
                     "day_2": {"subject": f"Relance rapide pour {business_name}", "body": f"Bonjour,\n\nJe reviens vers vous concernant l'idee de landing page plus claire pour {business_name}.\n\nSi vous voulez, je peux vous proposer une version simple adaptee a votre activite.\n\n{signature}"},
@@ -379,6 +386,12 @@ class EmailGenerator:
                 "day_10": {"subject": f"Dernier message pour {business_name}", "body": f"Bonjour,\n\nDernier message de ma part concernant votre site vitrine.\n\nSi vous voulez, je peux vous proposer une version adaptee.\n\n{signature}"},
             }
 
+        if strong_site and offer_type == "website":
+            return {
+                "day_2": {"subject": f"Quick follow-up for {business_name}", "body": f"Hello,\n\nFollowing up on the conversion optimization idea for {business_name}.\n\nI mainly mean more targeted pages, more visible proof and a more direct enquiry path.\n\nIf useful, I can send a short proposal.\n\n{signature}"},
+                "day_5": {"subject": f"Conversion angle for {business_name}", "body": f"Hello,\n\nOne last follow-up about a more targeted version of the site for {business_name}.\n\nIf useful, I can send the 3 optimizations I would prioritize first.\n\n{signature}"},
+                "day_10": {"subject": f"Final message for {business_name}", "body": f"Hello,\n\nFinal message from me about conversion optimization for your website.\n\nIf useful, I can send a brief and concrete proposal.\n\n{signature}"},
+            }
         if offer_type == "landing_page":
             return {
                 "day_2": {"subject": f"Quick follow-up for {business_name}", "body": f"Hello,\n\nFollowing up on the landing page idea for {business_name}.\n\nIf useful, I can suggest a simple version adapted to your business.\n\n{signature}"},
