@@ -15,7 +15,7 @@ powershell.exe -ExecutionPolicy Bypass -File "C:\Users\kenam\Application-Projet-
 For a live low-volume rollout on Windows, use the production wrapper:
 
 ```powershell
-powershell.exe -ExecutionPolicy Bypass -File "C:\Users\kenam\Application-Projet-K\LOCAL LEAD FINDER\scripts\run_auto_outreach_prod.ps1" --locations "Geneva" --categories "coiffeur" --limit 1
+powershell.exe -ExecutionPolicy Bypass -File "C:\Users\kenam\Application-Projet-K\LOCAL LEAD FINDER\scripts\run_auto_outreach_prod.ps1" --locations "Geneva" --limit 1
 ```
 
 ## What the wrapper does
@@ -52,7 +52,7 @@ python run.py --auto-outreach --dry-run
 Dry run through the wrapper:
 
 ```powershell
-powershell.exe -ExecutionPolicy Bypass -File "C:\Users\kenam\Application-Projet-K\LOCAL LEAD FINDER\scripts\run_auto_outreach.ps1" --dry-run --locations "Geneva" --categories "coiffeur" --limit 1
+powershell.exe -ExecutionPolicy Bypass -File "C:\Users\kenam\Application-Projet-K\LOCAL LEAD FINDER\scripts\run_auto_outreach.ps1" --dry-run --locations "Geneva" --categories "marketing,consultant" --limit 1
 ```
 
 ## Task Scheduler settings
@@ -85,6 +85,10 @@ Before enabling the task, verify:
 - SMTP configuration is complete
 - SMS provider configuration is complete if SMS should be sent
 - `AUTO_SEND_ENABLED=true`
+- `REQUIRE_WEBSITE=true`
+- `REQUIRE_CONTACT=true`
+- `PRIORITY_NICHES_ENABLED=true`
+- `AUTO_MODE_CATEGORIES` is set to your B2B niches
 - `AUTO_MODE_GENERATE_MOCKUPS=false` unless you explicitly want local mockups during auto mode
 - `AUTO_MODE_DEPLOY_MOCKUPS=false` unless you explicitly want Netlify deployment during auto mode
 

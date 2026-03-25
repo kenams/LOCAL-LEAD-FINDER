@@ -31,6 +31,46 @@ GENERIC_FR_TERMS = ["site officiel", "contact", "entreprise locale", "artisan", 
 GENERIC_EN_TERMS = ["official website", "contact", "local business", "independent", "small business"]
 
 CATEGORY_TERMS: Dict[str, Dict[str, List[str]]] = {
+    "marketing": {
+        "fr": ["agence marketing", "consultant marketing", "marketing digital", "strategie marketing", "agence communication"],
+        "en": ["marketing agency", "marketing consultant", "digital marketing", "growth marketing", "branding agency"],
+    },
+    "consultant": {
+        "fr": ["consultant", "cabinet conseil", "consulting", "conseil entreprise", "consultant independant"],
+        "en": ["consultant", "consulting firm", "business consultant", "independent consultant", "strategy consultant"],
+    },
+    "agency": {
+        "fr": ["agence", "agence digitale", "agence communication", "agence conseil", "agence creative"],
+        "en": ["agency", "digital agency", "creative agency", "branding agency", "consulting agency"],
+    },
+    "web design": {
+        "fr": ["web design", "agence web", "creation site web", "designer web", "studio web"],
+        "en": ["web design", "web design agency", "website design", "web studio", "website designer"],
+    },
+    "seo": {
+        "fr": ["seo", "referencement", "consultant seo", "agence seo", "referencement naturel"],
+        "en": ["seo", "seo agency", "seo consultant", "search engine optimization", "organic search"],
+    },
+    "coach": {
+        "fr": ["coach", "coach professionnel", "coach business", "coach executive", "accompagnement professionnel"],
+        "en": ["coach", "business coach", "executive coach", "leadership coach", "professional coach"],
+    },
+    "accountant": {
+        "fr": ["expert comptable", "comptable", "cabinet comptable", "fiduciaire", "conseil fiscal"],
+        "en": ["accountant", "accounting firm", "certified accountant", "tax advisor", "bookkeeping firm"],
+    },
+    "lawyer": {
+        "fr": ["avocat", "cabinet avocat", "avocat affaires", "avocat entreprise", "cabinet juridique"],
+        "en": ["lawyer", "law firm", "business lawyer", "corporate attorney", "legal practice"],
+    },
+    "financial advisor": {
+        "fr": ["conseiller financier", "gestion patrimoine", "planificateur financier", "conseil financier", "wealth management"],
+        "en": ["financial advisor", "wealth advisor", "financial planner", "wealth management", "investment advisor"],
+    },
+    "real estate": {
+        "fr": ["agence immobiliere", "immobilier", "courtier immobilier", "consultant immobilier", "real estate"],
+        "en": ["real estate", "real estate agency", "real estate broker", "property consultant", "estate agent"],
+    },
     "plombier": {
         "fr": ["plombier", "entreprise plomberie", "depannage plomberie", "service plomberie", "artisan plombier"],
         "en": ["plumber", "plumbing company", "emergency plumber", "plumbing service", "local plumber"],
@@ -66,6 +106,10 @@ CATEGORY_TERMS: Dict[str, Dict[str, List[str]]] = {
 }
 
 OSM_CATEGORY_TAGS: Dict[str, List[Dict[str, str]]] = {
+    "accountant": [{"key": "office", "value": "accountant"}],
+    "lawyer": [{"key": "office", "value": "lawyer"}],
+    "financial advisor": [{"key": "office", "value": "financial"}],
+    "real estate": [{"key": "office", "value": "estate_agent"}],
     "plombier": [{"key": "craft", "value": "plumber"}],
     "coiffeur": [{"key": "shop", "value": "hairdresser"}],
     "salon de coiffure": [{"key": "shop", "value": "hairdresser"}],
@@ -122,6 +166,26 @@ class SearchPlan:
 def canonicalize_category(category: str) -> str:
     """Map variant labels to a canonical category key."""
     normalized = normalize_location(category)
+    if "marketing" in normalized or "communication" in normalized or "branding" in normalized:
+        return "marketing"
+    if "consult" in normalized or "conseil" in normalized:
+        return "consultant"
+    if "agency" in normalized or "agence" in normalized:
+        return "agency"
+    if "web design" in normalized or "website design" in normalized or "design web" in normalized or "agence web" in normalized:
+        return "web design"
+    if normalized == "seo" or "referencement" in normalized or "search engine optimization" in normalized:
+        return "seo"
+    if "coach" in normalized:
+        return "coach"
+    if "account" in normalized or "compt" in normalized or "fiduc" in normalized:
+        return "accountant"
+    if "law" in normalized or "attorney" in normalized or "avocat" in normalized or "jurid" in normalized:
+        return "lawyer"
+    if "financial advisor" in normalized or "wealth" in normalized or "patrimoine" in normalized or "financ" in normalized:
+        return "financial advisor"
+    if "real estate" in normalized or "immobilier" in normalized or "estate agent" in normalized or "property" in normalized:
+        return "real estate"
     if "plomb" in normalized or "plumber" in normalized or "plumbing" in normalized:
         return "plombier"
     if "beaut" in normalized or "beaute" in normalized or "institut" in normalized:

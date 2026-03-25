@@ -212,6 +212,7 @@ class TestContactExtractor:
         assert result["email"] == "contact@studio.fr"
         assert result["contact_page"] == "https://studio.fr/contact"
         assert result["contact_extraction"]["selected_email"] == "contact@studio.fr"
+        assert result["contact_extraction"]["selected_email_source"] == "mailto"
         assert result["contact_extraction"]["selected_channel"] == "email"
         assert result["contact_form_url"] == "https://studio.fr/contact"
         assert result["contact_form_detected"] is True
@@ -255,4 +256,4 @@ class TestContactExtractor:
 
         assert result["email"] is None
         assert result["contact_extraction"]["selected_channel"] == "unavailable"
-        assert result["contact_extraction"]["fallback_reason"] == "no_email_found"
+        assert result["contact_extraction"]["fallback_reason"] == "empty_page"

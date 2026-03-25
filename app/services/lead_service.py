@@ -11,7 +11,7 @@ from typing import Callable, Dict, List
 from app.core.config import settings
 from app.core.country_config import detect_country, get_country_profile, resolve_email_language
 from app.core.logging import logger
-from app.core.search_config import SearchPlan, build_search_plan
+from app.core.search_config import SearchPlan, build_search_plan, canonicalize_category
 from app.core.sender_identity import contains_legacy_sender_identity
 from app.db.session import SessionLocal
 from app.models.prospect import Prospect
@@ -34,6 +34,19 @@ from app.services.sms_sender import SMSSender
 
 class LeadService:
     """Main service for lead operations."""
+
+    PRIORITY_NICHE_BONUSES = {
+        "marketing": 14,
+        "consultant": 12,
+        "agency": 12,
+        "web design": 14,
+        "seo": 14,
+        "coach": 10,
+        "accountant": 12,
+        "lawyer": 14,
+        "financial advisor": 14,
+        "real estate": 10,
+    }
 
     def __init__(self):
         self.providers = [SerpApiProvider(), OSMProvider(), SimpleProvider()]
@@ -82,8 +95,9 @@ class LeadService:
                     search_diagnostics.append(collection_result["diagnostics"])
 
             unique_leads = self.deduplicator.deduplicate_leads(all_leads)
-            processed_leads = await self._process_leads(unique_leads, language)
+            processed_leads, prevalidated_rejected = await self._process_leads(unique_leads, language)
             filtered_leads, rejected_leads = self.lead_filter.filter_leads(processed_leads)
+            rejected_leads = prevalidated_rejected + rejected_leads
             outreach_ready_leads = await self._prepare_outreach_assets(filtered_leads, language, auto_mode=False)
             saved_count = self._save_leads(outreach_ready_leads)
 
@@ -128,8 +142,9 @@ class LeadService:
                     search_diagnostics.append(collection_result["diagnostics"])
 
             unique_leads = self.deduplicator.deduplicate_leads(all_leads)
-            processed_leads = await self._process_leads(unique_leads, language)
+            processed_leads, prevalidated_rejected = await self._process_leads(unique_leads, language)
             filtered_leads, rejected_leads = self.lead_filter.filter_leads(processed_leads)
+            rejected_leads = prevalidated_rejected + rejected_leads
             auto_ready_leads, auto_rejected_leads = self._filter_auto_mode_contacts(
                 filtered_leads,
                 fallback_pool=processed_leads,
@@ -145,6 +160,7 @@ class LeadService:
             if not prospect_ids:
                 return {
                     "selected": 0,
+                    "raw_found": len(unique_leads),
                     "email_sent": 0,
                     "sms_sent": 0,
                     "failed": 0,
@@ -153,7 +169,10 @@ class LeadService:
                     "results": [],
                     "locations": locations,
                     "categories": categories,
-                    "leads_found": len(processed_leads),
+                    "leads_found": len(unique_leads),
+                    "validated_leads": len(filtered_leads),
+                    "validation_skipped": len(rejected_leads),
+                    "validation_reasons": self._count_rejection_reasons(rejected_leads),
                     "contact_ready": len(auto_ready_leads),
                     "leads_saved": saved_count,
                 }
@@ -170,7 +189,11 @@ class LeadService:
                 {
                     "locations": locations,
                     "categories": categories,
-                    "leads_found": len(processed_leads),
+                    "raw_found": len(unique_leads),
+                    "leads_found": len(unique_leads),
+                    "validated_leads": len(filtered_leads),
+                    "validation_skipped": len(rejected_leads),
+                    "validation_reasons": self._count_rejection_reasons(rejected_leads),
                     "contact_ready": len(auto_ready_leads),
                     "leads_saved": saved_count,
                 }
@@ -181,7 +204,11 @@ class LeadService:
             self._update_search_run(search_run, 0, "FAILED", str(exc), diagnostics=search_diagnostics if "search_diagnostics" in locals() else [])
             return {
                 "selected": 0,
+                "raw_found": 0,
                 "leads_found": 0,
+                "validated_leads": 0,
+                "validation_skipped": 0,
+                "validation_reasons": {},
                 "leads_saved": 0,
                 "email_sent": 0,
                 "sms_sent": 0,
@@ -227,6 +254,9 @@ class LeadService:
         return {
             "auto_send_enabled": settings.AUTO_SEND_ENABLED,
             "simulate": simulate,
+            "require_website": settings.REQUIRE_WEBSITE,
+            "require_contact": settings.REQUIRE_CONTACT,
+            "priority_niches_enabled": settings.PRIORITY_NICHES_ENABLED,
             "smtp_ready": smtp_ready,
             "sms_enabled": sms_enabled,
             "require_full_contact": require_full_contact,
@@ -360,13 +390,28 @@ class LeadService:
                 continue
 
             remaining = max(candidate_target - len(collected), limit)
-            provider_result = await provider.search_leads(
-                location=plan.location,
-                category=category,
-                limit=limit,
-                search_queries=search_queries,
-                max_candidates=remaining,
-            )
+            try:
+                provider_result = await provider.search_leads(
+                    location=plan.location,
+                    category=category,
+                    limit=limit,
+                    search_queries=search_queries,
+                    max_candidates=remaining,
+                )
+            except Exception as exc:
+                logger.warning(f"{provider_name} failed for {plan.location}/{category}: {exc}")
+                provider_diagnostics.append(
+                    {
+                        "provider": provider_name,
+                        "available": True,
+                        "queries": search_queries,
+                        "raw_results": 0,
+                        "kept_candidates": 0,
+                        "fallback_triggered": broaden,
+                        "notes": str(exc),
+                    }
+                )
+                continue
 
             provider_diagnostics.append(
                 {
@@ -393,13 +438,18 @@ class LeadService:
 
         return collected
 
-    async def _process_leads(self, leads: List[dict], language: str) -> List[dict]:
-        """Process leads: extract contacts, analyze sites and compute qualification."""
-        processed = []
+    async def _process_leads(self, leads: List[dict], language: str) -> tuple[List[dict], List[dict]]:
+        """Process leads: validate, extract contacts, analyze sites and compute qualification."""
+        processed: List[dict] = []
+        rejected: List[dict] = []
 
         for lead in leads:
             try:
                 self._apply_market_context(lead, language)
+                validation_reason = self.lead_filter.validate_before_analysis(lead)
+                if validation_reason:
+                    rejected.append({**lead, "rejection_reason": validation_reason})
+                    continue
 
                 if lead.get("website"):
                     contacts = await self.contact_extractor.extract_contacts(lead["website"])
@@ -413,6 +463,11 @@ class LeadService:
                         f"email_reason={extraction.get('email_unavailable_reason') or 'available'}"
                     )
 
+                validation_reason = self.lead_filter.validate_after_contact_extraction(lead)
+                if validation_reason:
+                    rejected.append({**lead, "rejection_reason": validation_reason})
+                    continue
+
                 analysis = await self.site_analyzer.analyze_site(
                     lead.get("website", ""),
                     country=lead.get("country", "FR"),
@@ -425,9 +480,9 @@ class LeadService:
                 processed.append(lead)
             except Exception as e:
                 logger.warning(f"Processing failed for lead {lead.get('business_name')}: {e}")
-                processed.append(lead)
+                rejected.append({**lead, "rejection_reason": "processing_error"})
 
-        return processed
+        return processed, rejected
 
     async def _prepare_outreach_assets(self, leads: List[dict], language: str, *, auto_mode: bool = False) -> List[dict]:
         """Generate mockups, deploy them and build outreach assets only for qualified leads."""
@@ -600,6 +655,15 @@ class LeadService:
                 str(lead.get("location", "")).strip().lower(),
             ]
         )
+
+    def _count_rejection_reasons(self, rejected_leads: List[dict]) -> dict[str, int]:
+        """Aggregate rejection reasons for reporting."""
+        reasons: dict[str, int] = {}
+        for lead in rejected_leads:
+            reason = (lead.get("rejection_reason") or "").strip()
+            if reason:
+                reasons[reason] = reasons.get(reason, 0) + 1
+        return reasons
 
     def _should_generate_mockups(self, auto_mode: bool) -> bool:
         """Only generate mockups in auto mode when explicitly enabled."""
@@ -1049,6 +1113,8 @@ class LeadService:
         """Convert persisted detected issues back to a list."""
         if not detected_issues:
             return []
+        if isinstance(detected_issues, list):
+            return [str(issue).strip() for issue in detected_issues if str(issue).strip()]
 
         try:
             parsed = json.loads(detected_issues)
@@ -1133,12 +1199,34 @@ class LeadService:
         country_weight = get_country_profile(lead.get("country")).country_value_weight
         opportunity = float(lead.get("opportunity_score") or 0)
         contact_bonus = 0
-        if lead.get("email"):
+        contact_penalty = 0
+        if lead.get("website"):
             contact_bonus += 8
+        if lead.get("email"):
+            contact_bonus += 16
+        else:
+            contact_penalty += 8
         if lead.get("phone"):
-            contact_bonus += 12
+            contact_bonus += 10
+        else:
+            contact_penalty += 4
+        site_quality = float(lead.get("site_quality_score") or 0)
+        quality_bonus = 0
+        if site_quality >= 70:
+            quality_bonus += 8
+        elif site_quality >= 40:
+            quality_bonus += 4
+        elif site_quality > 0:
+            quality_bonus -= 8
+        issues_penalty = min(len(self._parse_detected_issues(lead.get("detected_issues"))) * 1.5, 9)
+        niche_bonus = 0
+        if settings.PRIORITY_NICHES_ENABLED:
+            niche_bonus = self.PRIORITY_NICHE_BONUSES.get(canonicalize_category(str(lead.get("category", ""))), 0)
         price_anchor = float(lead.get("estimated_price_max") or 0) / 250.0
-        return round(opportunity * country_weight + contact_bonus + price_anchor, 2)
+        return round(
+            opportunity * country_weight + contact_bonus + quality_bonus + niche_bonus + price_anchor - contact_penalty - issues_penalty,
+            2,
+        )
 
     def _finalize_search_diagnostics(
         self,

@@ -68,6 +68,9 @@ def print_auto_outreach_preflight(preflight: dict) -> None:
         "Auto outreach preflight. "
         f"auto_send_enabled={preflight.get('auto_send_enabled')} "
         f"simulate={preflight.get('simulate')} "
+        f"require_website={preflight.get('require_website')} "
+        f"require_contact={preflight.get('require_contact')} "
+        f"priority_niches_enabled={preflight.get('priority_niches_enabled')} "
         f"smtp_ready={preflight.get('smtp_ready')} "
         f"sms_enabled={preflight.get('sms_enabled')} "
         f"require_full_contact={preflight.get('require_full_contact')} "
@@ -152,15 +155,25 @@ def main() -> int:
         print(f"Lead collection completed. {saved_count} leads saved.")
 
     if args.auto_outreach:
-        locations = [item.strip() for item in args.locations.split(",")] if args.locations else ["Geneva"]
-        categories = [item.strip() for item in args.categories.split(",")] if args.categories else ["coiffeur"]
+        locations = (
+            [item.strip() for item in args.locations.split(",") if item.strip()]
+            if args.locations
+            else [item.strip() for item in settings.AUTO_MODE_LOCATIONS.split(",") if item.strip()]
+        )
+        categories = (
+            [item.strip() for item in args.categories.split(",") if item.strip()]
+            if args.categories
+            else [item.strip() for item in settings.AUTO_MODE_CATEGORIES.split(",") if item.strip()]
+        )
+        limit = args.limit if args.limit != settings.DEFAULT_PROSPECTS_PER_LOCATION else settings.AUTO_MODE_LIMIT
+        language = args.lang if args.lang != settings.DEFAULT_LANGUAGE else settings.AUTO_MODE_LANGUAGE
         print_auto_outreach_preflight(lead_service.get_auto_outreach_preflight(simulate=simulate_mode))
         summary = asyncio.run(
             lead_service.auto_outreach(
                 locations=locations,
                 categories=categories,
-                limit=args.limit,
-                language=args.lang,
+                limit=limit,
+                language=language,
                 simulate=simulate_mode,
             )
         )

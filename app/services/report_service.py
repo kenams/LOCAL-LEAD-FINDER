@@ -29,6 +29,7 @@ class ReportService:
             "trigger": trigger,
             "schedule_name": schedule_name,
             "summary": summary,
+            "validation_reasons": summary.get("validation_reasons", {}),
             "top_prospects_contacted": self._select_top_prospects(summary.get("results", [])),
             "failure_reasons": self._build_failure_reasons(summary.get("results", [])),
         }
@@ -53,6 +54,8 @@ class ReportService:
                         "trigger": payload.get("trigger"),
                         "schedule_name": payload.get("schedule_name"),
                         "leads_found": summary.get("leads_found", 0),
+                        "validated_leads": summary.get("validated_leads", 0),
+                        "validation_skipped": summary.get("validation_skipped", 0),
                         "email_sent": summary.get("email_sent", 0),
                         "sms_sent": summary.get("sms_sent", 0),
                         "skipped": summary.get("skipped", 0),

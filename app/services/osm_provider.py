@@ -18,6 +18,9 @@ from app.services.provider_base import ProviderBase, SearchProviderResult
 class OSMProvider(ProviderBase):
     """Fallback provider using OpenStreetMap business data."""
 
+    def __init__(self) -> None:
+        self._geocode_cache: dict[tuple[str, str], Dict[str, Any] | None] = {}
+
     def is_available(self) -> bool:
         return True
 
@@ -95,6 +98,9 @@ class OSMProvider(ProviderBase):
 
     def _geocode_location(self, location: str, country: str) -> Dict[str, Any] | None:
         """Geocode a location to latitude/longitude."""
+        cache_key = (location.strip().lower(), country.strip().upper())
+        if cache_key in self._geocode_cache:
+            return self._geocode_cache[cache_key]
         country_code = country.lower() if country else ""
         response = requests.get(
             settings.OSM_NOMINATIM_URL,
@@ -109,7 +115,9 @@ class OSMProvider(ProviderBase):
         )
         response.raise_for_status()
         payload = response.json()
-        return payload[0] if payload else None
+        geocode = payload[0] if payload else None
+        self._geocode_cache[cache_key] = geocode
+        return geocode
 
     def _query_overpass(
         self,

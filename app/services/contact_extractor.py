@@ -52,6 +52,10 @@ class ContactExtractor:
             "pages_scanned": [],
             "emails_found": [],
             "selected_email": None,
+            "selected_email_source": None,
+            "selected_email_sources": [],
+            "selected_email_page_url": None,
+            "selected_email_page_type": None,
             "selected_phone": None,
             "selected_channel": "unavailable",
             "contact_forms_found": [],
@@ -110,7 +114,8 @@ class ContactExtractor:
                     if page_scan["status"] == "ok" and page_scan["page_type"] in {"contact", "about", "legal"} and not best_contact_page:
                         best_contact_page = page_scan["url"]
 
-                selected_email = self._select_best_email(email_candidates)
+                best_email_candidate = self._select_best_email_candidate(email_candidates)
+                selected_email = best_email_candidate["email"] if best_email_candidate else None
                 selected_phone = self._select_best_phone(phone_candidates)
                 contact_form_url = self._select_best_contact_form(contact_form_urls, scanned_pages)
                 recommended_channel = self._determine_recommended_channel(
@@ -127,12 +132,17 @@ class ContactExtractor:
                     "status": page["status"],
                     "emails_found": page["emails"],
                     "phones_found": page["phones"],
+                    "visible_text_length": page.get("visible_text_length", 0),
                     "contact_form_detected": page["contact_form_detected"],
                     "contact_form_signals": page["contact_form_signals"],
                     "social_profiles": page["social_profiles"],
                 } for page in scanned_pages]
                 diagnostics["emails_found"] = sorted(email_candidates.keys())
                 diagnostics["selected_email"] = selected_email
+                diagnostics["selected_email_source"] = (best_email_candidate or {}).get("best_source")
+                diagnostics["selected_email_sources"] = (best_email_candidate or {}).get("sources", [])
+                diagnostics["selected_email_page_url"] = (best_email_candidate or {}).get("page_url")
+                diagnostics["selected_email_page_type"] = (best_email_candidate or {}).get("page_type")
                 diagnostics["selected_phone"] = selected_phone
                 diagnostics["fallback_reason"] = self._determine_fallback_reason(scanned_pages, email_candidates, selected_email)
                 diagnostics["email_unavailable_reason"] = diagnostics["fallback_reason"] if not selected_email else ""
@@ -177,7 +187,7 @@ class ContactExtractor:
         page_result: dict[str, Any] = {
             "url": url, "page_type": page_type, "source": source, "status": "error", "emails": [], "phones": [],
             "email_candidates": [], "contact_form_detected": False, "contact_form_url": None,
-            "contact_form_signals": [], "social_profiles": {}, "soup": None,
+            "contact_form_signals": [], "social_profiles": {}, "soup": None, "visible_text_length": 0,
         }
         try:
             response = session.get(url, headers={"User-Agent": settings.USER_AGENT}, timeout=settings.REQUEST_TIMEOUT)
@@ -188,6 +198,7 @@ class ContactExtractor:
             page_result["email_candidates"] = self._extract_email_candidates_from_page(page_result["soup"], response.text, response.url, page_type)
             page_result["emails"] = sorted({candidate["email"] for candidate in page_result["email_candidates"]})
             visible_text = page_result["soup"].get_text(" ", strip=True)
+            page_result["visible_text_length"] = len(visible_text)
             page_result["phones"] = self._dedupe_strings(self._extract_tel_links(page_result["soup"]) + self._extract_phones(visible_text))
             form_data = self._extract_contact_form_data(page_result["soup"], response.url, page_type)
             page_result["contact_form_detected"] = form_data["detected"]
@@ -224,7 +235,11 @@ class ContactExtractor:
         score = self._score_email(normalized, source, page_type)
         existing = candidates.get(normalized)
         if existing:
-            existing["score"] = max(existing["score"], score)
+            if score > existing["score"]:
+                existing["score"] = score
+                existing["page_url"] = page_url
+                existing["page_type"] = page_type
+                existing["best_source"] = source
             if source not in existing["sources"]:
                 existing["sources"].append(source)
             existing["occurrences"] += 1
@@ -236,6 +251,7 @@ class ContactExtractor:
             "page_url": page_url,
             "page_type": page_type,
             "occurrences": 1,
+            "best_source": source,
         }
 
     def _merge_email_candidates(self, merged: dict[str, dict[str, Any]], page_candidates: list[dict[str, Any]]) -> None:
@@ -244,7 +260,11 @@ class ContactExtractor:
             email = candidate["email"]
             existing = merged.get(email)
             if existing:
-                existing["score"] = max(existing["score"], candidate["score"])
+                if candidate["score"] > existing["score"]:
+                    existing["score"] = candidate["score"]
+                    existing["page_url"] = candidate.get("page_url")
+                    existing["page_type"] = candidate.get("page_type")
+                    existing["best_source"] = candidate.get("best_source")
                 existing["occurrences"] += candidate.get("occurrences", 1)
                 existing["sources"] = sorted(set(existing["sources"] + candidate.get("sources", [])))
                 continue
@@ -253,6 +273,9 @@ class ContactExtractor:
                 "score": candidate["score"],
                 "sources": list(candidate.get("sources", [])),
                 "occurrences": candidate.get("occurrences", 1),
+                "page_url": candidate.get("page_url"),
+                "page_type": candidate.get("page_type"),
+                "best_source": candidate.get("best_source"),
             }
 
     def _extract_emails(self, text: str) -> list[str]:
@@ -497,12 +520,17 @@ class ContactExtractor:
                 break
         return score - 5 if "+" in local_part else score
 
-    def _select_best_email(self, candidates: dict[str, dict[str, Any]]) -> Optional[str]:
-        """Select the highest-confidence email from all candidates."""
+    def _select_best_email_candidate(self, candidates: dict[str, dict[str, Any]]) -> Optional[dict[str, Any]]:
+        """Select the highest-confidence email candidate from all candidates."""
         if not candidates:
             return None
         ranked = sorted(candidates.values(), key=lambda item: (item["score"], item.get("occurrences", 0), -len(item["email"])), reverse=True)
-        return ranked[0]["email"]
+        return ranked[0]
+
+    def _select_best_email(self, candidates: dict[str, dict[str, Any]]) -> Optional[str]:
+        """Select the highest-confidence email from all candidates."""
+        best_candidate = self._select_best_email_candidate(candidates)
+        return best_candidate["email"] if best_candidate else None
 
     def _select_best_phone(self, phones: list[str]) -> Optional[str]:
         """Pick the first reasonable phone number found across scanned pages."""
@@ -534,6 +562,8 @@ class ContactExtractor:
             return "no_pages_scanned"
         if not any(page["status"] == "ok" for page in scanned_pages):
             return "page_fetch_failed"
+        if all(page.get("visible_text_length", 0) < 40 for page in scanned_pages if page["status"] == "ok"):
+            return "empty_page"
         if email_candidates:
             return "no_ranked_email_selected"
         return "no_email_found"

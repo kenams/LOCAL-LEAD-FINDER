@@ -4,17 +4,39 @@ Tests for lead filtering.
 from app.services.lead_filter import LeadFilter
 
 
-def test_lead_without_website_but_with_phone_can_pass():
+def test_validate_before_analysis_rejects_missing_website():
     lead_filter = LeadFilter()
     lead = {
         "business_name": "Salon Test",
-        "opportunity_score": 95,
         "website": "",
         "phone": "+41 22 000 00 00",
         "email": None,
-        "site_quality_score": 0,
     }
 
-    filtered, rejected = lead_filter.filter_leads([lead])
-    assert len(filtered) == 1
-    assert not rejected
+    assert lead_filter.validate_before_analysis(lead) == "no website"
+
+
+def test_validate_after_contact_extraction_rejects_missing_contact():
+    lead_filter = LeadFilter()
+    lead = {
+        "business_name": "Studio Test",
+        "website": "https://studio.test",
+        "email": "",
+        "phone": "",
+        "contact_extraction": {"fallback_reason": "no_email_found"},
+    }
+
+    assert lead_filter.validate_after_contact_extraction(lead) == "no contact method"
+
+
+def test_validate_after_contact_extraction_rejects_broken_website():
+    lead_filter = LeadFilter()
+    lead = {
+        "business_name": "Broken Site",
+        "website": "https://broken.test",
+        "email": "",
+        "phone": "",
+        "contact_extraction": {"fallback_reason": "page_fetch_failed"},
+    }
+
+    assert lead_filter.validate_after_contact_extraction(lead) == "low_quality_website"

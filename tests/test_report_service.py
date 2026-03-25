@@ -13,6 +13,9 @@ def test_report_service_saves_and_lists_reports(monkeypatch, tmp_path: Path):
     paths = service.save_outreach_report(
         {
             "leads_found": 5,
+            "validated_leads": 3,
+            "validation_skipped": 2,
+            "validation_reasons": {"no website": 1, "no contact method": 1},
             "email_sent": 2,
             "sms_sent": 1,
             "skipped": 1,
@@ -31,6 +34,8 @@ def test_report_service_saves_and_lists_reports(monkeypatch, tmp_path: Path):
 
     reports = service.list_reports(limit=5)
     assert len(reports) == 1
+    assert reports[0]["validated_leads"] == 3
     payload = service.load_report(paths["json_path"])
     assert payload["summary"]["email_sent"] == 2
+    assert payload["validation_reasons"]["no website"] == 1
     assert payload["failure_reasons"]["smtp_not_configured"] == 1

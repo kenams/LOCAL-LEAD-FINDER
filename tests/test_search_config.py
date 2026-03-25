@@ -21,6 +21,17 @@ def test_category_canonicalization():
     assert canonicalize_category("plumber") == "plombier"
     assert canonicalize_category("hair salon") == "coiffeur"
     assert canonicalize_category("beauty salon") == "institut de beaute"
+    assert canonicalize_category("marketing agency") == "marketing"
+    assert canonicalize_category("business consultant") == "consultant"
+    assert canonicalize_category("financial planner") == "financial advisor"
+    assert canonicalize_category("law firm") == "lawyer"
+
+
+def test_build_search_plan_marketing_uses_b2b_terms():
+    plan = build_search_plan("Geneva", "marketing", "fr")
+    lowered_terms = [term.lower() for term in plan.category_terms]
+    assert "agence marketing" in lowered_terms
+    assert "marketing agency" in lowered_terms
 
 
 def test_build_search_plan_us():

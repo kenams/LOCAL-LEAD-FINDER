@@ -28,6 +28,9 @@ class Settings:
     # Defaults
     DEFAULT_LANGUAGE: str = os.getenv("DEFAULT_LANGUAGE", "fr")
     DEFAULT_PROSPECTS_PER_LOCATION: int = int(os.getenv("DEFAULT_PROSPECTS_PER_LOCATION", 10))
+    REQUIRE_WEBSITE: bool = os.getenv("REQUIRE_WEBSITE", "true").lower() == "true"
+    REQUIRE_CONTACT: bool = os.getenv("REQUIRE_CONTACT", "true").lower() == "true"
+    PRIORITY_NICHES_ENABLED: bool = os.getenv("PRIORITY_NICHES_ENABLED", "true").lower() == "true"
 
     # API Keys
     SERPAPI_KEY: str = os.getenv("SERPAPI_KEY", "")
@@ -61,7 +64,10 @@ class Settings:
     AUTO_MODE_NAME: str = os.getenv("AUTO_MODE_NAME", "Auto Outreach")
     AUTO_MODE_CRON: str = os.getenv("AUTO_MODE_CRON", "0 9 */2 * *")
     AUTO_MODE_LOCATIONS: str = os.getenv("AUTO_MODE_LOCATIONS", "Geneva,Sydney")
-    AUTO_MODE_CATEGORIES: str = os.getenv("AUTO_MODE_CATEGORIES", "coiffeur")
+    AUTO_MODE_CATEGORIES: str = os.getenv(
+        "AUTO_MODE_CATEGORIES",
+        "marketing,consultant,agency,web design,seo,coach,accountant,lawyer,financial advisor,real estate",
+    )
     AUTO_MODE_LIMIT: int = int(os.getenv("AUTO_MODE_LIMIT", 10))
     AUTO_MODE_LANGUAGE: str = os.getenv("AUTO_MODE_LANGUAGE", "fr")
     AUTO_MODE_SMS_ENABLED: bool = os.getenv("AUTO_MODE_SMS_ENABLED", "true").lower() == "true"
