@@ -51,7 +51,7 @@ class TestEmailGenerator:
         email = generator.generate_email(prospect, "en")
 
         assert email["selected_offer_type"] == "website"
-        assert "more professional" in email["subject"].lower()
+        assert "convert better" in email["subject"].lower()
         assert "showcase websites" in email["body"]
         assert "between 500 USD and 700 USD" in email["body"]
         assert "5 to 7 days" in email["body"]
@@ -69,11 +69,13 @@ class TestEmailGenerator:
             "country": "CH",
             "email_language": "fr",
             "website_page_count": 4,
+            "site_quality_score": 55,
             "target_type": "established_business",
         }
 
         email = generator.generate_email(prospect, "fr")
         assert email["selected_offer_type"] == "website"
+        assert "mieux convertir" in email["subject"]
         assert "500 CHF" in email["body"]
         assert "700 CHF" in email["body"]
 
@@ -101,12 +103,31 @@ class TestEmailGenerator:
             "location": "Geneva",
             "country": "CH",
             "email_language": "fr",
+            "selected_offer_type": "website",
             "website_page_count": 5,
+            "site_quality_score": 18,
         }
 
         email = generator.generate_email(prospect, "fr")
         assert email["body"].count("\n\n") >= 4
         assert "Je propose des sites vitrines simples et modernes" in email["body"]
+        assert "mieux convertir" in email["subject"]
+
+    def test_low_quality_website_uses_stronger_subject(self):
+        generator = EmailGenerator()
+        prospect = {
+            "business_name": "Cabinet Debut",
+            "category": "lawyer",
+            "location": "Geneva",
+            "country": "CH",
+            "email_language": "fr",
+            "selected_offer_type": "website",
+            "website_page_count": 2,
+            "site_quality_score": 18,
+        }
+
+        email = generator.generate_email(prospect, "fr")
+        assert "rassurer et convertir" in email["subject"]
 
     def test_trade_landing_page_uses_quote_angle(self):
         generator = EmailGenerator()
@@ -162,13 +183,30 @@ class TestEmailGenerator:
         email = generator.generate_email(prospect, "fr")
 
         assert email["selected_offer_type"] == "website"
-        assert "plus ciblée" in email["subject"]
+        assert "plus cible" in email["subject"].lower()
         assert "Votre site donne deja une bonne image" in email["body"]
         assert "pages plus ciblees" in email["body"]
         assert "preuves et cas clients plus visibles" in email["body"]
-
         assert "optimisation conversion" in email["follow_ups"]["day_2"]["body"]
         assert "3 optimisations" in email["follow_ups"]["day_5"]["body"]
+
+    def test_medium_landing_page_uses_softer_conversion_subject(self):
+        generator = EmailGenerator()
+        prospect = {
+            "business_name": "Studio Agenda",
+            "category": "coach",
+            "location": "Paris",
+            "country": "FR",
+            "email_language": "fr",
+            "website_page_count": 3,
+            "site_quality_score": 48,
+            "target_type": "growth_opportunity",
+        }
+
+        email = generator.generate_email(prospect, "fr")
+
+        assert email["selected_offer_type"] == "landing_page"
+        assert "convertir davantage" in email["subject"]
 
     def test_email_without_mockup_does_not_force_preview_link(self):
         generator = EmailGenerator()

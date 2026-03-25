@@ -37,6 +37,7 @@ class EmailGenerator:
         country = prospect.get("country")
         selected_offer_type = prospect.get("selected_offer_type") or self._select_offer_type(prospect)
         offer_copy = self._get_offer_copy(prospect, selected_offer_type, language, country)
+        offer_copy = self._tune_offer_copy_for_site_band(offer_copy, prospect, language, selected_offer_type)
         greeting = "Bonjour," if language == "fr" else "Hello,"
         signature_text = get_text_signature(language)
         signature_html = get_html_signature(language)
@@ -362,6 +363,54 @@ class EmailGenerator:
         if language == "fr":
             return f"Ce qui me fait penser cela: {joined}."
         return f"What made me think that: {joined}."
+
+    def _get_site_band(self, prospect: Dict) -> str:
+        """Group sites into simple quality bands for softer or stronger outreach angles."""
+        if self._is_already_strong_site(prospect):
+            return "strong"
+        site_quality_score = float(prospect.get("site_quality_score") or 0)
+        page_count = int(prospect.get("website_page_count") or 0)
+        if site_quality_score >= 45 or page_count >= 4:
+            return "medium"
+        return "low"
+
+    def _tune_offer_copy_for_site_band(
+        self,
+        offer_copy: Dict[str, str],
+        prospect: Dict,
+        language: str,
+        offer_type: str,
+    ) -> Dict[str, str]:
+        """Adjust the message tone depending on whether the site is weak, average or already strong."""
+        tuned = dict(offer_copy)
+        site_band = self._get_site_band(prospect)
+
+        if language == "fr":
+            if site_band == "low" and offer_type == "website":
+                tuned["subject"] = "Une version plus claire pour rassurer et convertir"
+                tuned["problem"] = "Je pense qu'il y a une vraie opportunite de clarifier le site et de rendre la prise de contact plus evidente."
+            elif site_band == "medium" and offer_type == "website":
+                tuned["subject"] = "Une version plus claire pour mieux convertir"
+                tuned["problem"] = "Le site a deja une bonne base. Je pense qu'il serait possible de le rendre plus lisible et plus oriente conversion."
+            elif site_band == "medium" and offer_type == "landing_page":
+                tuned["subject"] = "Une page plus directe pour convertir davantage"
+                tuned["problem"] = "Je pense qu'une page plus directe et plus orientee action pourrait mieux transformer vos visiteurs en demandes."
+            elif site_band == "strong" and offer_type == "website":
+                tuned["subject"] = "Une version plus ciblee pour mieux convertir"
+        else:
+            if site_band == "low" and offer_type == "website":
+                tuned["subject"] = "A clearer website to build trust and convert better"
+                tuned["problem"] = "I believe there is a real opportunity to clarify the website and make the enquiry path much more obvious."
+            elif site_band == "medium" and offer_type == "website":
+                tuned["subject"] = "A clearer version to convert better"
+                tuned["problem"] = "The website already has a decent base. I believe it could be made clearer and more conversion-focused."
+            elif site_band == "medium" and offer_type == "landing_page":
+                tuned["subject"] = "A more direct page to convert more visitors"
+                tuned["problem"] = "I believe a more direct, action-focused page could turn more visitors into enquiries."
+            elif site_band == "strong" and offer_type == "website":
+                tuned["subject"] = "A more targeted version to convert better"
+
+        return tuned
 
     def _build_offer_follow_ups(self, prospect: Dict, language: str, offer_type: str) -> Dict[str, Dict[str, str]]:
         business_name = prospect.get("business_name", "")
