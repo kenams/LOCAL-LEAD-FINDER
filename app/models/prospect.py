@@ -29,6 +29,7 @@ class Prospect(Base):
     site_quality_score = Column(Float)
     new_business_score = Column(Float)
     target_type = Column(String)
+    selected_offer_type = Column(String)
     website_page_count = Column(Integer)
     website_content_length = Column(Integer)
     has_booking_system = Column(Boolean, default=False)

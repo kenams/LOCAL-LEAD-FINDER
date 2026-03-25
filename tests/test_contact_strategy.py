@@ -25,16 +25,17 @@ def test_contact_strategy_generates_sequence_assets():
 
     assert messages["short_email"]["subject"] == "Sujet court"
     assert messages["follow_up_day_2"]["subject"] == "J+2"
-    assert "https://demo.netlify.app" in messages["sms_message"]
-    assert "KAH.DIGITAL" in messages["call_script"]
+    assert messages["sms_message"] == ""
+    assert messages["call_script"] == ""
+    assert messages["contact_strategy"] == "unavailable"
 
 
 def test_contact_strategy_prioritizes_phone_then_form_then_social():
     strategy = ContactStrategy()
 
     assert strategy.determine_strategy({"email": "lead@example.com", "phone": "+33123456789"}) == "email"
-    assert strategy.determine_strategy({"phone": "+33123456789"}) == "phone"
-    assert strategy.determine_strategy({"contact_form_url": "https://studio.fr/contact"}) == "contact_form"
-    assert strategy.determine_strategy({"instagram_url": "https://instagram.com/studio"}) == "instagram"
-    assert strategy.determine_strategy({"facebook_url": "https://facebook.com/studio"}) == "facebook"
+    assert strategy.determine_strategy({"phone": "+33123456789"}) == "unavailable"
+    assert strategy.determine_strategy({"contact_form_url": "https://studio.fr/contact"}) == "unavailable"
+    assert strategy.determine_strategy({"instagram_url": "https://instagram.com/studio"}) == "unavailable"
+    assert strategy.determine_strategy({"facebook_url": "https://facebook.com/studio"}) == "unavailable"
     assert strategy.determine_strategy({}) == "unavailable"

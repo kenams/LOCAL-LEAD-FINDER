@@ -6,6 +6,7 @@ from __future__ import annotations
 from typing import Dict
 
 from app.core.branding import get_business_identity, get_text_signature
+from app.core.config import settings
 from app.core.country_config import format_price_range
 
 
@@ -15,6 +16,8 @@ class ContactStrategy:
     def determine_strategy(self, prospect: Dict) -> str:
         if prospect.get("email"):
             return "email"
+        if settings.EMAIL_ONLY_OUTREACH:
+            return "unavailable"
         if prospect.get("phone"):
             return "phone"
         if prospect.get("contact_form_url") or prospect.get("contact_form_detected"):
@@ -38,13 +41,13 @@ class ContactStrategy:
         language = prospect.get("email_language", "fr")
         strategy = self.determine_strategy(prospect)
         social_channel = self.preferred_social_channel(prospect)
-        sms_message = self._generate_sms(prospect, language)
-        call_script = self._generate_call_script(prospect, language)
-        contact_form_message = self._generate_contact_form_message(prospect, language)
-        social_dm_message = self._generate_social_dm_message(prospect, language, social_channel)
+        sms_message = "" if settings.EMAIL_ONLY_OUTREACH else self._generate_sms(prospect, language)
+        call_script = "" if settings.EMAIL_ONLY_OUTREACH else self._generate_call_script(prospect, language)
+        contact_form_message = "" if settings.EMAIL_ONLY_OUTREACH else self._generate_contact_form_message(prospect, language)
+        social_dm_message = "" if settings.EMAIL_ONLY_OUTREACH else self._generate_social_dm_message(prospect, language, social_channel)
         return {
             "recommended_channel": strategy,
-            "contact_strategy": "phone" if strategy == "phone" else strategy,
+            "contact_strategy": strategy,
             "preferred_social_channel": social_channel,
             "recommended_cta": self._recommended_cta(strategy, language),
             "email_unavailable_reason": prospect.get("contact_extraction", {}).get("email_unavailable_reason", ""),
@@ -59,7 +62,7 @@ class ContactStrategy:
             "sms_message": sms_message,
             "call_script": call_script,
             "contact_form_message": contact_form_message,
-            "contact_form_message_medium": self._generate_contact_form_message(prospect, language, medium=True),
+            "contact_form_message_medium": "" if settings.EMAIL_ONLY_OUTREACH else self._generate_contact_form_message(prospect, language, medium=True),
             "social_dm_message": social_dm_message,
             "instagram_message": social_dm_message if social_channel == "instagram" else "",
             "facebook_message": social_dm_message if social_channel == "facebook" else "",

@@ -23,153 +23,175 @@ class EmailGenerator:
             logger.error(f"Email generation failed: {exc}")
             signature = get_text_signature(language)
             return {
-                "subject": "Proposition de refonte de site web" if language == "fr" else "Premium website redesign idea",
-                "short_subject": "Refonte premium" if language == "fr" else "Premium redesign",
+                "subject": "Une version plus claire pour attirer plus de clients" if language == "fr" else "A clearer page to attract more clients",
+                "short_subject": "Landing page claire" if language == "fr" else "Clear landing page",
                 "body": signature,
                 "short_body": signature,
                 "long_body": signature,
                 "html_body": f"<pre>{escape(signature)}</pre>",
                 "follow_ups": {},
+                "selected_offer_type": "landing_page",
             }
 
     def _build_pack(self, prospect: Dict, language: str) -> Dict[str, object]:
         identity = get_business_identity()
         country = prospect.get("country")
-        profile = get_country_profile(country)
-        business_name = prospect.get("business_name", "")
-        location = prospect.get("location", "")
-        category_data = self._get_category_data(prospect.get("category", ""), language)
-        price_min = format_price(prospect.get("estimated_price_min", 500 if language == "fr" else 900), country)
-        price_max = format_price(prospect.get("estimated_price_max", 800 if language == "fr" else 1400), country)
-        delivery_time = prospect.get("estimated_time", "1 a 2 jours" if language == "fr" else "1-2 days")
-        issues_lines = self._get_issue_lines(prospect, language)
-        mockup_text = self._get_mockup_text(prospect.get("mockup_url"), language)
-        mockup_html = self._get_mockup_html(prospect.get("mockup_url"), language)
-        market_sentence = self._get_market_sentence(profile.messaging_style, language)
+        selected_offer_type = prospect.get("selected_offer_type") or self._select_offer_type(prospect)
+        offer_copy = self._get_offer_copy(selected_offer_type, language, country)
+        greeting = "Bonjour," if language == "fr" else "Hello,"
         signature_text = get_text_signature(language)
         signature_html = get_html_signature(language)
-        reply_cta = self._get_reply_cta(language)
-        hook = self._get_hook(prospect, category_data, language)
 
-        if language == "fr":
-            subject = category_data["subject"].format(business_name=business_name)
-            short_subject = category_data["short_subject"].format(business_name=business_name)
-            greeting = "Bonjour,"
-            intro = f"Je vous contacte sous l'identite {identity.sender_display_name}."
-            long_body = "\n\n".join(
-                part
-                for part in [
-                    greeting,
-                    intro,
-                    hook,
-                    f"{category_data['pitch']} {market_sentence}",
-                    self._render_issue_block(issues_lines, language),
-                    "L'idee serait de proposer :\n"
-                    f"- {category_data['offer_1']}\n"
-                    f"- {category_data['offer_2']}\n"
-                    f"- {category_data['offer_3']}",
-                    mockup_text,
-                    f"Pour ce type de projet, on se situe generalement entre {price_min} et {price_max}, avec une livraison en {delivery_time}.",
-                    reply_cta,
-                    signature_text,
-                ]
-                if part
-            )
-            short_body = "\n\n".join(
-                part
-                for part in [
-                    greeting,
-                    hook,
-                    mockup_text,
-                    f"Je pense qu'une version plus premium pourrait mieux convertir, pour une enveloppe de {price_min} a {price_max}.",
-                    "Si vous voulez, repondez simplement OUI et je vous envoie les 3 priorites a traiter en premier.",
-                    signature_text,
-                ]
-                if part
-            )
-            html_body = self._render_html_email(
-                language=language,
-                subject=subject,
-                greeting=greeting,
-                intro=f"Je vous contacte sous l'identite <strong>{escape(identity.sender_display_name)}</strong>.",
-                paragraphs=[
-                    hook,
-                    f"{category_data['pitch']} {market_sentence}",
-                    self._render_issue_html(issues_lines, "J'ai notamment releve :"),
-                    "L'idee serait de proposer "
-                    f"<strong>{escape(category_data['offer_1'])}</strong>, "
-                    f"<strong>{escape(category_data['offer_2'])}</strong> et "
-                    f"<strong>{escape(category_data['offer_3'])}</strong>.",
-                    mockup_html,
-                    f"Pour ce type de projet, on se situe generalement entre <strong>{escape(price_min)}</strong> et <strong>{escape(price_max)}</strong>, avec une livraison en <strong>{escape(delivery_time)}</strong>.",
-                    "Si le sujet est pertinent, repondez simplement <strong>OUI</strong> et je vous envoie les 3 priorites que je traiterais en premier.",
-                ],
-                signature_html=signature_html,
-            )
-        else:
-            subject = category_data["subject"].format(business_name=business_name)
-            short_subject = category_data["short_subject"].format(business_name=business_name)
-            greeting = "Hello,"
-            intro = f"I am reaching out as {identity.sender_display_name}."
-            long_body = "\n\n".join(
-                part
-                for part in [
-                    greeting,
-                    intro,
-                    hook,
-                    f"{category_data['pitch']} {market_sentence}",
-                    self._render_issue_block(issues_lines, language),
-                    "The goal would be to deliver:\n"
-                    f"- {category_data['offer_1']}\n"
-                    f"- {category_data['offer_2']}\n"
-                    f"- {category_data['offer_3']}",
-                    mockup_text,
-                    f"For this kind of project, pricing would usually sit between {price_min} and {price_max}, with delivery in {delivery_time}.",
-                    reply_cta,
-                    signature_text,
-                ]
-                if part
-            )
-            short_body = "\n\n".join(
-                part
-                for part in [
-                    greeting,
-                    hook,
-                    mockup_text,
-                    f"I believe a more premium version could convert better, typically in the {price_min} to {price_max} range.",
-                    "If useful, reply with YES and I will send the 3 priority improvements I would make first.",
-                    signature_text,
-                ]
-                if part
-            )
-            html_body = self._render_html_email(
-                language=language,
-                subject=subject,
-                greeting=greeting,
-                intro=f"I am reaching out as <strong>{escape(identity.sender_display_name)}</strong>.",
-                paragraphs=[
-                    hook,
-                    f"{category_data['pitch']} {market_sentence}",
-                    self._render_issue_html(issues_lines, "The main points I noticed were:"),
-                    "The goal would be to deliver "
-                    f"<strong>{escape(category_data['offer_1'])}</strong>, "
-                    f"<strong>{escape(category_data['offer_2'])}</strong> and "
-                    f"<strong>{escape(category_data['offer_3'])}</strong>.",
-                    mockup_html,
-                    f"For this kind of project, pricing would usually sit between <strong>{escape(price_min)}</strong> and <strong>{escape(price_max)}</strong>, with delivery in <strong>{escape(delivery_time)}</strong>.",
-                    "If useful, reply with <strong>YES</strong> and I will send the 3 priority improvements I would make first.",
-                ],
-                signature_html=signature_html,
-            )
+        body_lines = [
+            greeting,
+            "",
+            offer_copy["intro"],
+            "",
+            offer_copy["problem"],
+            "",
+            offer_copy["headline"],
+            f"-> {offer_copy['feature_1']}",
+            f"-> {offer_copy['feature_2']}",
+            f"-> {offer_copy['feature_3']}",
+            "",
+            offer_copy["delivery"],
+            offer_copy["price"],
+            "",
+            offer_copy["cta"],
+            "",
+            signature_text,
+        ]
+        text_body = "\n".join(line for line in body_lines if line is not None)
+        html_body = self._render_html_email(
+            language=language,
+            subject=offer_copy["subject"],
+            greeting=greeting,
+            intro=escape(offer_copy["intro"]),
+            paragraphs=[
+                escape(offer_copy["problem"]),
+                (
+                    f"<div><div style=\"font-weight:700; margin-bottom:8px;\">{escape(offer_copy['headline'])}</div>"
+                    f"<ul style=\"margin:0; padding-left:18px; color:#EDE7DB;\">"
+                    f"<li style=\"margin:0 0 6px 0;\">{escape(offer_copy['feature_1'])}</li>"
+                    f"<li style=\"margin:0 0 6px 0;\">{escape(offer_copy['feature_2'])}</li>"
+                    f"<li style=\"margin:0 0 6px 0;\">{escape(offer_copy['feature_3'])}</li>"
+                    f"</ul></div>"
+                ),
+                f"{escape(offer_copy['delivery'])} {escape(offer_copy['price'])}",
+                escape(offer_copy["cta"]),
+            ],
+            signature_html=signature_html,
+        )
 
         return {
-            "subject": subject,
-            "short_subject": short_subject,
-            "body": long_body,
-            "short_body": short_body,
-            "long_body": long_body,
+            "subject": offer_copy["subject"],
+            "short_subject": offer_copy["short_subject"],
+            "body": text_body,
+            "short_body": text_body,
+            "long_body": text_body,
             "html_body": html_body,
-            "follow_ups": self._build_follow_ups(prospect, language, category_data),
+            "follow_ups": self._build_offer_follow_ups(prospect, language, selected_offer_type),
+            "selected_offer_type": selected_offer_type,
+        }
+
+    def _select_offer_type(self, prospect: Dict) -> str:
+        page_count = int(prospect.get("website_page_count") or 0)
+        new_business_score = float(prospect.get("new_business_score") or 0)
+        target_type = prospect.get("target_type") or ""
+        if target_type == "early_stage_business" or page_count <= 3 or new_business_score >= 65:
+            return "landing_page"
+        return "website"
+
+    def _get_offer_copy(self, offer_type: str, language: str, country: str | None) -> Dict[str, str]:
+        currency = get_country_profile(country).currency or "EUR"
+        landing_price_fr = f"C'est generalement autour de 300 {currency}, selon le besoin."
+        website_price_fr = f"C'est souvent entre 500 {currency} et 700 {currency}, selon les besoins."
+        landing_price_en = f"This is usually around 300 {currency}, depending on what is needed."
+        website_price_en = f"This is often between 500 {currency} and 700 {currency}, depending on the scope."
+
+        if offer_type == "landing_page":
+            if language == "fr":
+                return {
+                    "subject": "Une version plus claire pour attirer plus de clients",
+                    "short_subject": "Landing page plus claire",
+                    "intro": "Je suis tombe sur votre site en cherchant des services comme les votres.",
+                    "problem": "Je pense qu'il y a une opportunite simple d'ameliorer la conversion avec une page plus claire et orientee clients.",
+                    "headline": "Je propose des landing pages modernes :",
+                    "feature_1": "design propre et mobile",
+                    "feature_2": "message clair",
+                    "feature_3": "formulaire de contact",
+                    "delivery": "Livraison en general sous 3 a 5 jours.",
+                    "price": landing_price_fr,
+                    "cta": "Si vous voulez, je peux vous proposer une version adaptee a votre activite.",
+                }
+            return {
+                "subject": "A clearer page to attract more clients",
+                "short_subject": "Clearer landing page",
+                "intro": "I came across your website while looking for businesses like yours.",
+                "problem": "I believe there is a simple opportunity to improve conversion with a clearer, more client-focused page.",
+                "headline": "I build modern landing pages:",
+                "feature_1": "clean mobile design",
+                "feature_2": "clear message",
+                "feature_3": "contact form",
+                "delivery": "Delivery is usually within 3 to 5 days.",
+                "price": landing_price_en,
+                "cta": "If useful, I can suggest a version adapted to your business.",
+            }
+
+        if language == "fr":
+            return {
+                "subject": "Une version plus pro et plus efficace de votre site",
+                "short_subject": "Site vitrine plus pro",
+                "intro": "Je suis tombe sur votre site en cherchant des services comme les votres.",
+                "problem": "En regardant votre site, je pense qu'il serait possible de le rendre plus clair et plus efficace pour convertir vos visiteurs.",
+                "headline": "Je propose des sites vitrines simples et modernes :",
+                "feature_1": "structure claire",
+                "feature_2": "design mobile",
+                "feature_3": "base SEO propre",
+                "delivery": "Livraison en general sous 5 a 7 jours.",
+                "price": website_price_fr,
+                "cta": "Si vous voulez, je peux vous proposer une version adaptee a votre activite.",
+            }
+        return {
+            "subject": "A more professional and more effective version of your website",
+            "short_subject": "More effective website",
+            "intro": "I came across your website while looking for businesses like yours.",
+            "problem": "Looking at your website, I believe it could be made clearer and more effective at converting visitors.",
+            "headline": "I build simple modern showcase websites:",
+            "feature_1": "clear structure",
+            "feature_2": "mobile design",
+            "feature_3": "clean SEO basics",
+            "delivery": "Delivery is usually within 5 to 7 days.",
+            "price": website_price_en,
+            "cta": "If useful, I can suggest a version adapted to your business.",
+        }
+
+    def _build_offer_follow_ups(self, prospect: Dict, language: str, offer_type: str) -> Dict[str, Dict[str, str]]:
+        business_name = prospect.get("business_name", "")
+        signature = get_text_signature(language)
+        if language == "fr":
+            if offer_type == "landing_page":
+                return {
+                    "day_2": {"subject": f"Relance rapide pour {business_name}", "body": f"Bonjour,\n\nJe reviens vers vous concernant l'idee de landing page plus claire pour {business_name}.\n\nSi vous voulez, je peux vous proposer une version simple adaptee a votre activite.\n\n{signature}"},
+                    "day_5": {"subject": f"Version simple pour {business_name}", "body": f"Bonjour,\n\nJe me permets une derniere relance concernant une landing page plus claire pour {business_name}.\n\nSi le sujet est utile, je peux vous envoyer une proposition courte.\n\n{signature}"},
+                    "day_10": {"subject": f"Dernier message pour {business_name}", "body": f"Bonjour,\n\nDernier message de ma part concernant une landing page plus claire pour {business_name}.\n\nSi vous voulez, je peux vous proposer une version adaptee.\n\n{signature}"},
+                }
+            return {
+                "day_2": {"subject": f"Relance rapide pour {business_name}", "body": f"Bonjour,\n\nJe reviens vers vous concernant l'idee de site vitrine plus clair pour {business_name}.\n\nSi vous voulez, je peux vous proposer une version adaptee a votre activite.\n\n{signature}"},
+                "day_5": {"subject": f"Version plus claire pour {business_name}", "body": f"Bonjour,\n\nJe me permets une derniere relance concernant un site vitrine plus simple et plus efficace pour {business_name}.\n\nSi utile, je peux vous envoyer une proposition courte.\n\n{signature}"},
+                "day_10": {"subject": f"Dernier message pour {business_name}", "body": f"Bonjour,\n\nDernier message de ma part concernant votre site vitrine.\n\nSi vous voulez, je peux vous proposer une version adaptee.\n\n{signature}"},
+            }
+
+        if offer_type == "landing_page":
+            return {
+                "day_2": {"subject": f"Quick follow-up for {business_name}", "body": f"Hello,\n\nFollowing up on the landing page idea for {business_name}.\n\nIf useful, I can suggest a simple version adapted to your business.\n\n{signature}"},
+                "day_5": {"subject": f"Simple version for {business_name}", "body": f"Hello,\n\nOne last follow-up about a clearer landing page for {business_name}.\n\nIf useful, I can send a short proposal.\n\n{signature}"},
+                "day_10": {"subject": f"Final message for {business_name}", "body": f"Hello,\n\nFinal message from me about a clearer landing page for {business_name}.\n\nIf useful, I can suggest a version adapted to your business.\n\n{signature}"},
+            }
+        return {
+            "day_2": {"subject": f"Quick follow-up for {business_name}", "body": f"Hello,\n\nFollowing up on the website idea for {business_name}.\n\nIf useful, I can suggest a clearer version adapted to your business.\n\n{signature}"},
+            "day_5": {"subject": f"Clearer website for {business_name}", "body": f"Hello,\n\nOne last follow-up about a simpler, more effective showcase website for {business_name}.\n\nIf useful, I can send a short proposal.\n\n{signature}"},
+            "day_10": {"subject": f"Final message for {business_name}", "body": f"Hello,\n\nFinal message from me about your website.\n\nIf useful, I can suggest a version adapted to your business.\n\n{signature}"},
         }
 
     def _get_hook(self, prospect: Dict, category_data: Dict[str, str], language: str) -> str:

@@ -6,27 +6,27 @@ from app.services.email_generator import EmailGenerator
 
 
 class TestEmailGenerator:
-    def test_generate_french_email(self):
+    def test_generate_french_landing_page_email(self):
         generator = EmailGenerator()
         prospect = {
-            "business_name": "Coiffure Plus",
-            "category": "coiffeur",
-            "location": "Toulouse",
+            "business_name": "Studio Launch",
+            "category": "consultant",
+            "location": "Paris",
             "country": "FR",
             "email_language": "fr",
-            "website": "https://coiffureplus.fr",
-            "detected_issues": ["no_cta", "old_design"],
-            "estimated_price_min": 500,
-            "estimated_price_max": 800,
-            "estimated_time": "1 a 2 jours",
+            "website": "https://studio-launch.fr",
+            "website_page_count": 1,
+            "new_business_score": 78,
+            "target_type": "early_stage_business",
         }
 
         email = generator.generate_email(prospect, "fr")
 
-        assert "Coiffure Plus" in email["subject"]
-        assert "premium" in email["body"]
-        assert "500 EUR" in email["body"]
-        assert "800 EUR" in email["body"]
+        assert email["selected_offer_type"] == "landing_page"
+        assert "attirer plus de clients" in email["subject"]
+        assert "landing pages modernes" in email["body"]
+        assert "autour de 300 EUR" in email["body"]
+        assert "3 a 5 jours" in email["body"]
         assert DEFAULT_SENDER_IDENTITY.sender_display_name in email["body"]
         assert DEFAULT_SENDER_IDENTITY.professional_email in email["body"]
         assert email["html_body"].startswith("<!DOCTYPE html>")
@@ -35,75 +35,78 @@ class TestEmailGenerator:
         assert "day_5" in email["follow_ups"]
         assert "day_10" in email["follow_ups"]
 
-    def test_generate_english_email(self):
+    def test_generate_english_website_email(self):
         generator = EmailGenerator()
         prospect = {
-            "business_name": "Beauty Salon",
-            "category": "institut de beaute",
+            "business_name": "Growth Advisory",
+            "category": "financial advisor",
             "location": "New York",
             "country": "US",
             "email_language": "en",
-            "detected_issues": ["no_booking"],
-            "estimated_price_min": 1500,
-            "estimated_price_max": 2200,
+            "website_page_count": 6,
+            "new_business_score": 18,
+            "target_type": "established_business",
         }
 
         email = generator.generate_email(prospect, "en")
 
-        assert "Beauty Salon" in email["subject"]
-        assert "booking" in email["body"]
-        assert "$1500" in email["body"]
-        assert "$2200" in email["body"]
+        assert email["selected_offer_type"] == "website"
+        assert "more professional" in email["subject"].lower()
+        assert "showcase websites" in email["body"]
+        assert "between 500 USD and 700 USD" in email["body"]
+        assert "5 to 7 days" in email["body"]
         assert DEFAULT_SENDER_IDENTITY.sender_display_name in email["body"]
         assert DEFAULT_SENDER_IDENTITY.professional_email in email["body"]
         assert email["short_body"]
-        assert "YES" in email["follow_ups"]["day_2"]["body"]
+        assert "suggest a clearer version" in email["follow_ups"]["day_2"]["body"]
 
     def test_generate_swiss_email_stays_french(self):
         generator = EmailGenerator()
         prospect = {
             "business_name": "Studio Geneve",
-            "category": "spa",
+            "category": "agency",
             "location": "Geneva",
             "country": "CH",
             "email_language": "fr",
-            "estimated_price_min": 1200,
-            "estimated_price_max": 1800,
+            "website_page_count": 4,
+            "target_type": "established_business",
         }
 
         email = generator.generate_email(prospect, "fr")
-        assert "1200 CHF" in email["body"]
-        assert "1800 CHF" in email["body"]
+        assert email["selected_offer_type"] == "website"
+        assert "500 CHF" in email["body"]
+        assert "700 CHF" in email["body"]
 
-    def test_mockup_link_is_injected_naturally(self):
+    def test_early_stage_business_defaults_to_landing_page(self):
         generator = EmailGenerator()
         prospect = {
-            "business_name": "Studio Geneve",
-            "category": "spa",
+            "business_name": "Coach Start",
+            "category": "coach",
             "location": "Geneva",
             "country": "CH",
             "email_language": "fr",
-            "mockup_url": "https://demo.netlify.app",
+            "website_page_count": 2,
+            "target_type": "early_stage_business",
         }
 
         email = generator.generate_email(prospect, "fr")
-        assert "https://demo.netlify.app" in email["body"]
-        assert "https://demo.netlify.app" in email["html_body"]
+        assert email["selected_offer_type"] == "landing_page"
+        assert "landing pages modernes" in email["body"]
 
-    def test_no_website_uses_presence_hook(self):
+    def test_email_body_stays_short_and_clear(self):
         generator = EmailGenerator()
         prospect = {
-            "business_name": "Salon Local",
-            "category": "coiffeur",
+            "business_name": "Cabinet Local",
+            "category": "lawyer",
             "location": "Geneva",
             "country": "CH",
             "email_language": "fr",
-            "website": "",
-            "phone": "+41 22 000 00 00",
+            "website_page_count": 5,
         }
 
         email = generator.generate_email(prospect, "fr")
-        assert "presence digitale" in email["body"]
+        assert email["body"].count("\n\n") >= 4
+        assert "Je propose des sites vitrines simples et modernes" in email["body"]
 
     def test_email_without_mockup_does_not_force_preview_link(self):
         generator = EmailGenerator()

@@ -43,7 +43,7 @@ def test_auto_outreach_channel_prioritizes_email_then_sms_then_skip():
     service = LeadService()
 
     assert service._select_outreach_channel(Prospect(email="lead@example.com", phone="+41795551212"), {}) == "email"
-    assert service._select_outreach_channel(Prospect(phone="+41795551212"), {}) == "sms"
+    assert service._select_outreach_channel(Prospect(phone="+41795551212"), {}) == "skipped"
     assert service._select_outreach_channel(Prospect(), {}) == "skipped"
 
 
@@ -81,7 +81,7 @@ def test_auto_outreach_preflight_reports_missing_delivery_config(monkeypatch):
     assert preflight["sms_ready"] is False
     assert any("AUTO_SEND_ENABLED is false" in warning for warning in preflight["warnings"])
     assert any("smtp_not_configured" in warning for warning in preflight["warnings"])
-    assert any("sms_provider_not_configured" in warning for warning in preflight["warnings"])
+    assert any("EMAIL_ONLY_OUTREACH is true" in warning for warning in preflight["warnings"])
 
 
 def test_auto_outreach_preflight_reports_sms_disabled(monkeypatch):
@@ -91,7 +91,7 @@ def test_auto_outreach_preflight_reports_sms_disabled(monkeypatch):
     preflight = service.get_auto_outreach_preflight(simulate=False)
 
     assert preflight["sms_enabled"] is False
-    assert any("AUTO_MODE_SMS_ENABLED is false" in warning for warning in preflight["warnings"])
+    assert preflight["email_only_outreach"] is True
 
 
 def test_auto_outreach_preflight_reports_full_contact_requirement(monkeypatch):
@@ -184,9 +184,9 @@ def test_prepare_outreach_assets_skips_mockups_in_auto_mode(monkeypatch):
         service.contact_strategy,
         "generate_messages",
         lambda lead: {
-            "recommended_channel": "sms",
-            "contact_strategy": "phone",
-            "sms_message": "Bonjour",
+            "recommended_channel": "unavailable",
+            "contact_strategy": "unavailable",
+            "sms_message": "",
             "email_unavailable_reason": "missing_email",
         },
     )
@@ -212,3 +212,4 @@ def test_prepare_outreach_assets_skips_mockups_in_auto_mode(monkeypatch):
     assert calls == {"generate": 0, "prepare": 0, "deploy": 0}
     assert prepared[0]["mockup_url"] == ""
     assert notes["netlify_status"] == "disabled_auto_mode"
+    assert prepared[0]["selected_outreach_channel"] == "skipped"

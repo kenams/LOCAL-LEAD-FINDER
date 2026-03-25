@@ -121,7 +121,7 @@ class LeadService:
         simulate: bool = False,
         progress_callback: Callable[[int, int, Dict[str, object], Dict[str, object]], None] | None = None,
     ) -> Dict[str, object]:
-        """Run the simplified search -> generate -> send flow with email-first SMS fallback."""
+        """Run the simplified search -> generate -> send flow with email-only delivery."""
         logger.info(f"Starting auto outreach flow: locations={locations}, categories={categories}, limit={limit}, simulate={simulate}")
         search_run = self._create_search_run(locations, categories, limit, language)
 
@@ -174,6 +174,10 @@ class LeadService:
                     "validation_skipped": len(rejected_leads),
                     "validation_reasons": self._count_rejection_reasons(rejected_leads),
                     "contact_ready": len(auto_ready_leads),
+                    "landing_page_offers": self._count_offer_type(auto_ready_leads, "landing_page"),
+                    "website_offers": self._count_offer_type(auto_ready_leads, "website"),
+                    "landing_page_sent": 0,
+                    "website_sent": 0,
                     "early_stage_businesses": self._count_target_type(processed_leads, "early_stage_business"),
                     "growth_opportunities": self._count_target_type(processed_leads, "growth_opportunity"),
                     "high_opportunity_leads": self._count_high_opportunity_leads(processed_leads),
@@ -198,6 +202,8 @@ class LeadService:
                     "validation_skipped": len(rejected_leads),
                     "validation_reasons": self._count_rejection_reasons(rejected_leads),
                     "contact_ready": len(auto_ready_leads),
+                    "landing_page_offers": self._count_offer_type(auto_ready_leads, "landing_page"),
+                    "website_offers": self._count_offer_type(auto_ready_leads, "website"),
                     "early_stage_businesses": self._count_target_type(processed_leads, "early_stage_business"),
                     "growth_opportunities": self._count_target_type(processed_leads, "growth_opportunity"),
                     "high_opportunity_leads": self._count_high_opportunity_leads(processed_leads),
@@ -215,6 +221,10 @@ class LeadService:
                 "validated_leads": 0,
                 "validation_skipped": 0,
                 "validation_reasons": {},
+                "landing_page_offers": 0,
+                "website_offers": 0,
+                "landing_page_sent": 0,
+                "website_sent": 0,
                 "early_stage_businesses": 0,
                 "growth_opportunities": 0,
                 "high_opportunity_leads": 0,
@@ -233,7 +243,7 @@ class LeadService:
         warnings = list(settings.get_smtp_identity_warnings())
         smtp_ready = self.email_sender.is_configured()
         sms_ready = self.sms_sender.is_configured()
-        sms_enabled = settings.AUTO_MODE_SMS_ENABLED
+        sms_enabled = settings.AUTO_MODE_SMS_ENABLED and not settings.EMAIL_ONLY_OUTREACH
         require_full_contact = settings.AUTO_MODE_REQUIRE_EMAIL_AND_PHONE
         generate_mockups = self._should_generate_mockups(auto_mode=True)
         deploy_mockups = self._should_deploy_mockups(auto_mode=True)
@@ -247,16 +257,8 @@ class LeadService:
             warnings.append(
                 f"AUTO_MODE_CONTACT_CANDIDATE_MULTIPLIER={settings.AUTO_MODE_CONTACT_CANDIDATE_MULTIPLIER}: auto mode scans more candidates to find full-contact sites."
             )
-        if not sms_enabled:
-            warnings.append("AUTO_MODE_SMS_ENABLED is false: phone-only leads will be skipped.")
-        elif not settings.SMS_PROVIDER:
-            warnings.append("SMS provider is not configured: phone-only leads will fail with sms_provider_not_configured.")
-        elif settings.SMS_PROVIDER != "twilio":
-            warnings.append(
-                f"SMS provider '{settings.SMS_PROVIDER}' is unsupported: phone-only leads will fail with sms_provider_unsupported."
-            )
-        elif not sms_ready:
-            warnings.append("SMS credentials are incomplete: phone-only leads will fail with sms_not_configured.")
+        if settings.EMAIL_ONLY_OUTREACH:
+            warnings.append("EMAIL_ONLY_OUTREACH is true: leads without email will be skipped.")
         if deploy_mockups and not settings.NETLIFY_TOKEN:
             warnings.append("AUTO_MODE_DEPLOY_MOCKUPS is enabled but NETLIFY_TOKEN is missing: mockup deployment will fail.")
 
@@ -267,6 +269,7 @@ class LeadService:
             "require_contact": settings.REQUIRE_CONTACT,
             "priority_niches_enabled": settings.PRIORITY_NICHES_ENABLED,
             "smtp_ready": smtp_ready,
+            "email_only_outreach": settings.EMAIL_ONLY_OUTREACH,
             "sms_enabled": sms_enabled,
             "min_opportunity_score": settings.AUTO_MODE_MIN_OPPORTUNITY_SCORE,
             "require_full_contact": require_full_contact,
@@ -553,6 +556,7 @@ class LeadService:
                 email_en = self.email_generator.generate_email({**lead, "email_language": "en"}, "en")
                 lead.update(
                     {
+                        "selected_offer_type": email_fr.get("selected_offer_type") or email_en.get("selected_offer_type") or lead.get("selected_offer_type", "website"),
                         "email_subject_fr": email_fr["subject"],
                         "email_body_fr": email_fr.get("long_body", email_fr.get("body", "")),
                         "email_html_fr": email_fr.get("html_body", ""),
@@ -578,8 +582,8 @@ class LeadService:
                     {
                         "email_language": lead.get("email_language", language),
                         "status": "MAQUETTE_READY",
-                        "selected_outreach_channel": "email" if lead.get("email") else ("sms" if lead.get("phone") else "skipped"),
-                        "outreach_status": "NOT_SENT" if (lead.get("email") or lead.get("phone")) else "SKIPPED",
+                        "selected_outreach_channel": "email" if lead.get("email") else "skipped",
+                        "outreach_status": "NOT_SENT" if lead.get("email") else "SKIPPED",
                         "notes": json.dumps(
                             {
                                 **contact_messages,
@@ -594,6 +598,9 @@ class LeadService:
                                 "email_short_en": lead.get("email_short_en", ""),
                                 "follow_ups_fr": lead.get("follow_ups_fr", {}),
                                 "follow_ups_en": lead.get("follow_ups_en", {}),
+                                "selected_offer_type": lead.get("selected_offer_type", ""),
+                                "selected_email_subject": lead.get("email_subject_en") if lead.get("email_language") == "en" else lead.get("email_subject_fr"),
+                                "selected_email_body": lead.get("email_body_en") if lead.get("email_language") == "en" else lead.get("email_body_fr"),
                                 "new_business_score": lead.get("new_business_score", 0),
                                 "target_type": lead.get("target_type", ""),
                                 "website_page_count": lead.get("website_page_count", 0),
@@ -690,6 +697,10 @@ class LeadService:
     def _count_target_type(self, leads: List[dict], target_type: str) -> int:
         """Count analyzed leads matching one target profile."""
         return sum(1 for lead in leads if str(lead.get("target_type") or "").strip() == target_type)
+
+    def _count_offer_type(self, leads: List[dict], offer_type: str) -> int:
+        """Count leads matching one selected offer type."""
+        return sum(1 for lead in leads if str(lead.get("selected_offer_type") or "").strip() == offer_type)
 
     def _count_high_opportunity_leads(self, leads: List[dict]) -> int:
         """Count leads that should be prioritized immediately."""
@@ -799,6 +810,7 @@ class LeadService:
                 lead.email_subject_en = email_en["subject"]
                 lead.email_body_en = email_en.get("body", email_en.get("long_body", ""))
                 lead.email_html_en = email_en.get("html_body", "")
+                lead.selected_offer_type = email_fr.get("selected_offer_type") or email_en.get("selected_offer_type") or lead.selected_offer_type
 
                 lead_dict.update(
                     {
@@ -846,13 +858,15 @@ class LeadService:
         allow_resend: bool = False,
         progress_callback: Callable[[int, int, Dict[str, object], Dict[str, object]], None] | None = None,
     ) -> Dict[str, object]:
-        """Send outreach automatically by email first, then SMS, otherwise skip."""
+        """Send outreach automatically by email, otherwise skip."""
         if not settings.AUTO_SEND_ENABLED and not simulate:
             logger.warning("Automatic outreach send skipped because AUTO_SEND_ENABLED is false")
             return {
                 "selected": 0,
                 "email_sent": 0,
                 "sms_sent": 0,
+                "landing_page_sent": 0,
+                "website_sent": 0,
                 "failed": 1,
                 "skipped": 0,
                 "simulated": 0,
@@ -889,6 +903,8 @@ class LeadService:
                 "selected": len(prospects),
                 "email_sent": 0,
                 "sms_sent": 0,
+                "landing_page_sent": 0,
+                "website_sent": 0,
                 "failed": 0,
                 "skipped": 0,
                 "simulated": 0,
@@ -922,35 +938,16 @@ class LeadService:
                         summary["simulated"] += 1
                     elif email_result.success:
                         summary["email_sent"] += 1
+                        if (prospect.selected_offer_type or "") == "landing_page":
+                            summary["landing_page_sent"] += 1
+                        else:
+                            summary["website_sent"] += 1
                     elif email_result.skipped:
                         summary["skipped"] += 1
                     else:
                         summary["failed"] += 1
-                elif channel == "sms":
-                    prepared_sms = self.sms_sender.prepare_sms(prospect)
-                    sms_result = self.sms_sender.send_prepared_sms(prepared_sms, simulate=simulate)
-                    recipient = prepared_sms.actual_recipient
-                    error = sms_result.error
-                    simulated_result = sms_result.simulated
-                    self._apply_outreach_result(
-                        db,
-                        prospect,
-                        channel=channel,
-                        success=sms_result.success,
-                        skipped=sms_result.skipped,
-                        simulated=sms_result.simulated,
-                        error=sms_result.error,
-                    )
-                    if sms_result.simulated:
-                        summary["simulated"] += 1
-                    elif sms_result.success:
-                        summary["sms_sent"] += 1
-                    elif sms_result.skipped:
-                        summary["skipped"] += 1
-                    else:
-                        summary["failed"] += 1
                 else:
-                    error = "sms_disabled_by_policy" if prospect.phone and not settings.AUTO_MODE_SMS_ENABLED else "no email and no phone"
+                    error = "no_email"
                     recipient = ""
                     self._apply_outreach_result(db, prospect, channel="skipped", success=False, skipped=True, simulated=False, error=error)
                     summary["skipped"] += 1
@@ -960,6 +957,7 @@ class LeadService:
                         "prospect_id": prospect.id,
                         "business_name": prospect.business_name,
                         "location": prospect.location,
+                        "selected_offer_type": prospect.selected_offer_type or "",
                         "channel_used": prospect.selected_outreach_channel,
                         "recipient_used": recipient,
                         "send_result": prospect.send_status,
@@ -982,6 +980,8 @@ class LeadService:
                 "selected": 0,
                 "email_sent": 0,
                 "sms_sent": 0,
+                "landing_page_sent": 0,
+                "website_sent": 0,
                 "failed": 1,
                 "skipped": 0,
                 "simulated": 0,
@@ -1191,6 +1191,7 @@ class LeadService:
             "site_quality_score",
             "new_business_score",
             "target_type",
+            "selected_offer_type",
             "website_page_count",
             "website_content_length",
             "has_booking_system",
@@ -1331,11 +1332,12 @@ class LeadService:
         prospect.email_subject_en = email_en["subject"]
         prospect.email_body_en = email_en.get("long_body", email_en.get("body", ""))
         prospect.email_html_en = email_en.get("html_body", "")
+        prospect.selected_offer_type = email_fr.get("selected_offer_type") or email_en.get("selected_offer_type") or prospect.selected_offer_type
 
     def _ensure_contact_strategy_assets(self, db, prospect: Prospect) -> dict:
-        """Ensure stored notes contain the generated SMS and outreach routing assets."""
+        """Ensure stored notes contain the generated outreach routing assets."""
         notes_payload = self._load_notes_payload(prospect.notes)
-        if notes_payload.get("sms_message") and notes_payload.get("contact_strategy"):
+        if notes_payload.get("contact_strategy") and "sms_message" in notes_payload:
             return notes_payload
 
         lead_dict = {
@@ -1405,8 +1407,6 @@ class LeadService:
         """Select the automatic outreach channel for a prospect."""
         if prospect.email:
             return "email"
-        if prospect.phone and settings.AUTO_MODE_SMS_ENABLED:
-            return "sms"
         return "skipped"
 
     def _apply_outreach_result(

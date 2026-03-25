@@ -89,7 +89,7 @@ def render_automation_center():
             )
 
     render_section("Last Run", "Latest Summary", "Key results from the most recent autonomous outreach run.")
-    summary_cols = st.columns(7)
+    summary_cols = st.columns(8)
     with summary_cols[0]:
         render_metric_card("Raw found", str(latest_funnel.get("raw_found", latest_summary.get("raw_found", latest_summary.get("leads_found", 0)))), "All raw candidates discovered")
     with summary_cols[1]:
@@ -101,12 +101,14 @@ def render_automation_center():
     with summary_cols[4]:
         render_metric_card("Emails sent", str(latest_funnel.get("email_sent", latest_summary.get("email_sent", 0))), "Email channel")
     with summary_cols[5]:
-        render_metric_card("SMS sent", str(latest_funnel.get("sms_sent", latest_summary.get("sms_sent", 0))), "SMS fallback")
+        render_metric_card("Landing sent", str(latest_funnel.get("landing_page_sent", latest_summary.get("landing_page_sent", 0))), "Landing page offers closed")
     with summary_cols[6]:
+        render_metric_card("Website sent", str(latest_funnel.get("website_sent", latest_summary.get("website_sent", 0))), "Showcase website offers closed")
+    with summary_cols[7]:
         render_metric_card("Failed", str(latest_funnel.get("failed", latest_summary.get("failed", 0))), "Execution errors")
 
     render_section("Lead Quality", "Found -> Kept -> Sent", "Use the quality funnel and rejection reasons to understand why leads were dropped.")
-    quality_cols = st.columns(7)
+    quality_cols = st.columns(8)
     with quality_cols[0]:
         render_metric_card("Rejected", str(latest_funnel.get("validation_skipped", latest_summary.get("validation_skipped", 0))), "Rejected before outreach")
     with quality_cols[1]:
@@ -120,6 +122,8 @@ def render_automation_center():
     with quality_cols[5]:
         render_metric_card("Early-stage", str(latest_funnel.get("early_stage_businesses", latest_summary.get("early_stage_businesses", 0))), "Newer or lighter businesses")
     with quality_cols[6]:
+        render_metric_card("Landing offers", str(latest_funnel.get("landing_page_offers", latest_summary.get("landing_page_offers", 0))), "Smaller offer angle selected")
+    with quality_cols[7]:
         render_metric_card("High-opportunity", str(latest_funnel.get("high_opportunity_leads", latest_summary.get("high_opportunity_leads", 0))), "Strong conversion candidates")
 
     validation_reasons = latest_report.get("validation_reasons", {}) if latest_report else {}
@@ -144,8 +148,9 @@ def render_automation_center():
                 "Saved": row.get("leads_saved", 0),
                 "Early-stage": row.get("early_stage_businesses", 0),
                 "High-opportunity": row.get("high_opportunity_leads", 0),
+                "Landing offers": row.get("landing_page_offers", 0),
+                "Website offers": row.get("website_offers", 0),
                 "Emails": row.get("email_sent", 0),
-                "SMS": row.get("sms_sent", 0),
                 "Skipped": row.get("skipped", 0),
                 "Failed": row.get("failed", 0),
             }
@@ -171,7 +176,7 @@ def render_automation_center():
         if report_payload:
             report_summary = report_payload.get("summary", {})
             report_funnel = report_payload.get("quality_funnel", {})
-            funnel_cols = st.columns(8)
+            funnel_cols = st.columns(9)
             with funnel_cols[0]:
                 render_metric_card("Raw", str(report_funnel.get("raw_found", report_summary.get("raw_found", report_summary.get("leads_found", 0)))), "Candidates found")
             with funnel_cols[1]:
@@ -183,11 +188,20 @@ def render_automation_center():
             with funnel_cols[4]:
                 render_metric_card("Selected", str(report_funnel.get("selected", report_summary.get("selected", 0))), "Queued to send")
             with funnel_cols[5]:
-                render_metric_card("Sent", str(report_funnel.get("email_sent", report_summary.get("email_sent", 0)) + report_funnel.get("sms_sent", report_summary.get("sms_sent", 0))), "Delivered this run")
+                render_metric_card("Emails sent", str(report_funnel.get("email_sent", report_summary.get("email_sent", 0))), "Delivered this run")
             with funnel_cols[6]:
-                render_metric_card("Early-stage", str(report_funnel.get("early_stage_businesses", report_summary.get("early_stage_businesses", 0))), "Younger-looking businesses")
+                render_metric_card("Landing sent", str(report_funnel.get("landing_page_sent", report_summary.get("landing_page_sent", 0))), "Landing page offers sent")
             with funnel_cols[7]:
+                render_metric_card("Website sent", str(report_funnel.get("website_sent", report_summary.get("website_sent", 0))), "Showcase website offers sent")
+            with funnel_cols[8]:
                 render_metric_card("High-opportunity", str(report_funnel.get("high_opportunity_leads", report_summary.get("high_opportunity_leads", 0))), "Best conversion candidates")
+            offer_cols = st.columns(3)
+            with offer_cols[0]:
+                render_metric_card("Early-stage", str(report_funnel.get("early_stage_businesses", report_summary.get("early_stage_businesses", 0))), "Younger-looking businesses")
+            with offer_cols[1]:
+                render_metric_card("Landing offers", str(report_funnel.get("landing_page_offers", report_summary.get("landing_page_offers", 0))), "Offer type selection")
+            with offer_cols[2]:
+                render_metric_card("Website offers", str(report_funnel.get("website_offers", report_summary.get("website_offers", 0))), "Offer type selection")
             if report_payload.get("validation_reasons"):
                 st.dataframe(
                     pd.DataFrame(
@@ -222,6 +236,7 @@ def render_automation_center():
             {
                 "Business": prospect.business_name,
                 "Location": prospect.location,
+                "Offer": prospect.selected_offer_type or "",
                 "Channel": prospect.selected_outreach_channel or "",
                 "Outreach Status": prospect.outreach_status or "",
                 "Send Status": prospect.send_status or "",
@@ -338,7 +353,10 @@ def render_manual_debug_mode():
         render_prospect_summary(prospect, f"preview_{prospect.id}")
         notes_data = parse_notes(prospect.notes)
         lang = st.selectbox("Preview language", ["fr", "en"], index=0 if (prospect.email_language or "fr") == "fr" else 1)
-        outreach_asset = st.selectbox("Outreach asset", ["Primary email", "Short email", "Follow-up J+2", "Follow-up J+5", "Final follow-up J+10", "SMS", "Call script", "Contact form", "Social DM"])
+        preview_assets = ["Primary email", "Short email", "Follow-up J+2", "Follow-up J+5", "Final follow-up J+10"]
+        if not settings.EMAIL_ONLY_OUTREACH:
+            preview_assets.extend(["SMS", "Call script", "Contact form", "Social DM"])
+        outreach_asset = st.selectbox("Outreach asset", preview_assets)
         subject, body, html_body = build_outreach_preview(prospect, notes_data, lang, outreach_asset)
 
         preview_cols = st.columns([1, 1.2])
@@ -347,6 +365,7 @@ def render_manual_debug_mode():
                 ("Language", prospect.email_language or "N/A"),
                 ("Price", format_price_range(prospect.estimated_price_min, prospect.estimated_price_max, prospect.country)),
                 ("Recommended channel", notes_data.get("recommended_channel", "N/A")),
+                ("Selected offer", prospect.selected_offer_type or "N/A"),
                 ("Selected outreach", prospect.selected_outreach_channel or "N/A"),
                 ("Outreach status", prospect.outreach_status or "N/A"),
                 ("Recipient", prospect.email or prospect.phone or "Unavailable"),
@@ -391,7 +410,8 @@ def render_debug_tools():
             st.session_state["last_auto_outreach_summary"] = summary
             st.success(
                 f"Manual auto run complete. leads_found={summary.get('leads_found', 0)} "
-                f"email_sent={summary.get('email_sent', 0)} sms_sent={summary.get('sms_sent', 0)} "
+                f"email_sent={summary.get('email_sent', 0)} landing_sent={summary.get('landing_page_sent', 0)} "
+                f"website_sent={summary.get('website_sent', 0)} "
                 f"skipped={summary.get('skipped', 0)} failed={summary.get('failed', 0)}"
             )
     with button_cols[1]:
@@ -419,8 +439,9 @@ def render_debug_tools():
         ("Automation enabled", "Yes" if status.get("enabled") else "No"),
         ("Next run", format_datetime_label(status.get("next_run"))),
         ("Last status", status.get("last_status", "IDLE")),
+        ("Email-only outreach", "Yes" if settings.EMAIL_ONLY_OUTREACH else "No"),
         ("SMTP host", settings.SMTP_HOST or "Missing"),
-        ("SMS provider", settings.SMS_PROVIDER or "Missing"),
+        ("Send cap / run", str(settings.SEND_MAX_PER_RUN)),
     ])
     for warning in settings.get_smtp_identity_warnings():
         st.warning(warning)
@@ -664,33 +685,36 @@ def render_send_panel(prospects, selected_prospects, current_prospect, current_s
                 review_btn = st.button("Mark reviewed", key=f"review_{prospect.id}", use_container_width=True)
             with action_cols[5]:
                 contact_btn = st.button("Mark as contacted", key=f"contact_{prospect.id}", use_container_width=True)
-            fallback_cols = st.columns(6)
-            with fallback_cols[0]:
-                render_copy_text_button(notes.get("sms_message", notes.get("sms", "")) or "SMS unavailable", f"sms_{prospect.id}", label="Copy SMS")
-            with fallback_cols[1]:
-                render_copy_text_button(notes.get("call_script", "") or "Call script unavailable", f"call_{prospect.id}", label="Copy call script")
-            with fallback_cols[2]:
-                if notes.get("contact_form_url"):
-                    st.link_button("Open contact form", notes.get("contact_form_url"), use_container_width=True)
-                else:
-                    st.button("Open contact form", key=f"contact_form_missing_{prospect.id}", disabled=True, use_container_width=True)
-            with fallback_cols[3]:
-                if notes.get("instagram_url"):
-                    st.link_button("Open Instagram", notes.get("instagram_url"), use_container_width=True)
-                else:
-                    st.button("Open Instagram", key=f"instagram_missing_{prospect.id}", disabled=True, use_container_width=True)
-            with fallback_cols[4]:
-                if notes.get("facebook_url"):
-                    st.link_button("Open Facebook", notes.get("facebook_url"), use_container_width=True)
-                else:
-                    st.button("Open Facebook", key=f"facebook_missing_{prospect.id}", disabled=True, use_container_width=True)
-            with fallback_cols[5]:
-                render_copy_text_button(notes.get("social_dm_message", "") or "DM unavailable", f"dm_{prospect.id}", label="Copy DM message")
-            with st.expander("Prepared fallback messages", expanded=False):
-                st.text_area("SMS", value=notes.get("sms_message", notes.get("sms", "")), height=90, key=f"sms_preview_{prospect.id}")
-                st.text_area("Call script", value=notes.get("call_script", ""), height=180, key=f"call_preview_{prospect.id}")
-                st.text_area("Contact form message", value=notes.get("contact_form_message", ""), height=140, key=f"form_preview_{prospect.id}")
-                st.text_area("Social DM", value=notes.get("social_dm_message", ""), height=120, key=f"dm_preview_{prospect.id}")
+            if settings.EMAIL_ONLY_OUTREACH:
+                st.caption("Fallback actions are hidden because autonomous outreach is currently email-only.")
+            else:
+                fallback_cols = st.columns(6)
+                with fallback_cols[0]:
+                    render_copy_text_button(notes.get("sms_message", notes.get("sms", "")) or "SMS unavailable", f"sms_{prospect.id}", label="Copy SMS")
+                with fallback_cols[1]:
+                    render_copy_text_button(notes.get("call_script", "") or "Call script unavailable", f"call_{prospect.id}", label="Copy call script")
+                with fallback_cols[2]:
+                    if notes.get("contact_form_url"):
+                        st.link_button("Open contact form", notes.get("contact_form_url"), use_container_width=True)
+                    else:
+                        st.button("Open contact form", key=f"contact_form_missing_{prospect.id}", disabled=True, use_container_width=True)
+                with fallback_cols[3]:
+                    if notes.get("instagram_url"):
+                        st.link_button("Open Instagram", notes.get("instagram_url"), use_container_width=True)
+                    else:
+                        st.button("Open Instagram", key=f"instagram_missing_{prospect.id}", disabled=True, use_container_width=True)
+                with fallback_cols[4]:
+                    if notes.get("facebook_url"):
+                        st.link_button("Open Facebook", notes.get("facebook_url"), use_container_width=True)
+                    else:
+                        st.button("Open Facebook", key=f"facebook_missing_{prospect.id}", disabled=True, use_container_width=True)
+                with fallback_cols[5]:
+                    render_copy_text_button(notes.get("social_dm_message", "") or "DM unavailable", f"dm_{prospect.id}", label="Copy DM message")
+                with st.expander("Prepared fallback messages", expanded=False):
+                    st.text_area("SMS", value=notes.get("sms_message", notes.get("sms", "")), height=90, key=f"sms_preview_{prospect.id}")
+                    st.text_area("Call script", value=notes.get("call_script", ""), height=180, key=f"call_preview_{prospect.id}")
+                    st.text_area("Contact form message", value=notes.get("contact_form_message", ""), height=140, key=f"form_preview_{prospect.id}")
+                    st.text_area("Social DM", value=notes.get("social_dm_message", ""), height=120, key=f"dm_preview_{prospect.id}")
             if preview_btn:
                 st.session_state["preview_prospect_id"] = prospect.id
                 st.rerun()
@@ -727,7 +751,7 @@ def render_prospect_summary(prospect, key_prefix: str):
     with cols[0]:
         render_key_value_card("Market Profile", [("Country", f"{prospect.country} - {get_country_display_name(prospect.country)}"), ("Location", prospect.location), ("Category", prospect.category), ("Website", prospect.website or "N/A"), ("Priority", str(round(prospect.priority_score or 0, 2))), ("New business", str(round(prospect.new_business_score or 0, 2))), ("Target type", prospect.target_type or "N/A"), ("Send status", get_send_indicator(prospect.send_status))])
     with cols[1]:
-        render_key_value_card("Contact Readiness", [("Email", prospect.email or "N/A"), ("Phone", prospect.phone or "N/A"), ("Recommended channel", notes.get("recommended_channel", "unavailable")), ("Selected outreach", prospect.selected_outreach_channel or "N/A"), ("Outreach status", prospect.outreach_status or "N/A"), ("Contact form", notes.get("contact_form_url", "N/A")), ("Instagram", notes.get("instagram_url", "N/A")), ("Social-first", "Yes" if prospect.social_first_business else "No"), ("Pages", str(prospect.website_page_count or 0)), ("Booking system", "Yes" if prospect.has_booking_system else "No"), ("SEO foundation", "Yes" if prospect.has_seo_foundation else "No"), ("Modern UI", "Yes" if prospect.has_modern_ui else "No"), ("Language", prospect.email_language or "N/A"), ("Estimated price", format_price_range(prospect.estimated_price_min, prospect.estimated_price_max, prospect.country)), ("Mockup", get_mockup_indicator(prospect.mockup_status)), ("Send attempts", str(prospect.send_attempts or 0))])
+        render_key_value_card("Contact Readiness", [("Email", prospect.email or "N/A"), ("Phone", prospect.phone or "N/A"), ("Recommended channel", notes.get("recommended_channel", "unavailable")), ("Selected offer", prospect.selected_offer_type or "N/A"), ("Selected outreach", prospect.selected_outreach_channel or "N/A"), ("Outreach status", prospect.outreach_status or "N/A"), ("Contact form", notes.get("contact_form_url", "N/A")), ("Instagram", notes.get("instagram_url", "N/A")), ("Social-first", "Yes" if prospect.social_first_business else "No"), ("Pages", str(prospect.website_page_count or 0)), ("Booking system", "Yes" if prospect.has_booking_system else "No"), ("SEO foundation", "Yes" if prospect.has_seo_foundation else "No"), ("Modern UI", "Yes" if prospect.has_modern_ui else "No"), ("Language", prospect.email_language or "N/A"), ("Estimated price", format_price_range(prospect.estimated_price_min, prospect.estimated_price_max, prospect.country)), ("Mockup", get_mockup_indicator(prospect.mockup_status)), ("Send attempts", str(prospect.send_attempts or 0))])
     render_mockup_actions(prospect, key_prefix)
 
 
@@ -818,6 +842,9 @@ def apply_channel_filters(prospects, *, phone_available: bool, contact_form_avai
 
 def render_alternative_outreach_panel(prospect, notes_data: dict):
     render_section("Fallback Outreach", "Alternative Channels", "Use the best backup contact path when no email is available.")
+    if settings.EMAIL_ONLY_OUTREACH:
+        st.info("Email-only outreach is enabled. Leads without email are skipped in autonomous mode.")
+        return
     render_key_value_card("Channel Routing", [
         ("Recommended channel", notes_data.get("recommended_channel", "unavailable")),
         ("Contact strategy", notes_data.get("contact_strategy", "unavailable")),

@@ -31,6 +31,7 @@ class Settings:
     REQUIRE_WEBSITE: bool = os.getenv("REQUIRE_WEBSITE", "true").lower() == "true"
     REQUIRE_CONTACT: bool = os.getenv("REQUIRE_CONTACT", "true").lower() == "true"
     PRIORITY_NICHES_ENABLED: bool = os.getenv("PRIORITY_NICHES_ENABLED", "true").lower() == "true"
+    EMAIL_ONLY_OUTREACH: bool = os.getenv("EMAIL_ONLY_OUTREACH", "true").lower() == "true"
 
     # API Keys
     SERPAPI_KEY: str = os.getenv("SERPAPI_KEY", "")

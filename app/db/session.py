@@ -45,6 +45,7 @@ def _ensure_prospect_columns():
         "priority_score": "FLOAT",
         "new_business_score": "FLOAT",
         "target_type": "VARCHAR",
+        "selected_offer_type": "VARCHAR",
         "website_page_count": "INTEGER",
         "website_content_length": "INTEGER",
         "has_booking_system": "BOOLEAN",

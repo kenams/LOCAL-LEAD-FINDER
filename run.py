@@ -51,8 +51,11 @@ def print_auto_outreach_summary(summary: dict, report_paths: dict | None = None)
         f"selected={summary.get('selected', 0)} "
         f"early_stage={summary.get('early_stage_businesses', 0)} "
         f"high_opportunity={summary.get('high_opportunity_leads', 0)} "
+        f"landing_offers={summary.get('landing_page_offers', 0)} "
+        f"website_offers={summary.get('website_offers', 0)} "
         f"email_sent={summary.get('email_sent', 0)} "
-        f"sms_sent={summary.get('sms_sent', 0)} "
+        f"landing_sent={summary.get('landing_page_sent', 0)} "
+        f"website_sent={summary.get('website_sent', 0)} "
         f"skipped={summary.get('skipped', 0)} "
         f"failed={summary.get('failed', 0)} "
         f"simulated={summary.get('simulated', 0)}"
@@ -60,6 +63,7 @@ def print_auto_outreach_summary(summary: dict, report_paths: dict | None = None)
     for row in summary.get("results", []):
         print(
             f"- {row.get('business_name')} | {row.get('location')} | "
+            f"offer={row.get('selected_offer_type') or 'n/a'} | "
             f"channel={row.get('channel_used')} | recipient={row.get('recipient_used') or 'n/a'} | "
             f"result={row.get('send_result')} | error={row.get('error') or ''}"
         )
@@ -74,17 +78,15 @@ def print_auto_outreach_preflight(preflight: dict) -> None:
         "Auto outreach preflight. "
         f"auto_send_enabled={preflight.get('auto_send_enabled')} "
         f"simulate={preflight.get('simulate')} "
+        f"email_only_outreach={preflight.get('email_only_outreach')} "
         f"require_website={preflight.get('require_website')} "
         f"require_contact={preflight.get('require_contact')} "
         f"priority_niches_enabled={preflight.get('priority_niches_enabled')} "
         f"smtp_ready={preflight.get('smtp_ready')} "
-        f"sms_enabled={preflight.get('sms_enabled')} "
         f"min_opportunity_score={preflight.get('min_opportunity_score')} "
         f"require_full_contact={preflight.get('require_full_contact')} "
         f"contact_candidate_multiplier={preflight.get('contact_candidate_multiplier')} "
         f"send_max_per_run={preflight.get('send_max_per_run')} "
-        f"sms_ready={preflight.get('sms_ready')} "
-        f"sms_provider={preflight.get('sms_provider') or 'none'} "
         f"generate_mockups={preflight.get('generate_mockups')} "
         f"deploy_mockups={preflight.get('deploy_mockups')}"
     )
@@ -101,7 +103,7 @@ def main() -> int:
     parser.add_argument("--lang", type=str, default=settings.DEFAULT_LANGUAGE, choices=["fr", "en"], help="Email language")
     parser.add_argument("--generate-emails", action="store_true", help="Generate emails for existing leads")
     parser.add_argument("--send-emails", action="store_true", help="Send generated outreach emails")
-    parser.add_argument("--auto-outreach", action="store_true", help="Search, generate and send automatically by email first, then SMS")
+    parser.add_argument("--auto-outreach", action="store_true", help="Search, generate and send automatically with email-only outreach")
     parser.add_argument("--only-not-sent", action="store_true", help="Only target leads that have never been sent")
     parser.add_argument("--test-to", type=str, help="Override all recipients with a test email address")
     parser.add_argument("--simulate-send", action="store_true", help="Simulate sending without SMTP delivery")
