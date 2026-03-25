@@ -5,6 +5,7 @@ Local Lead Finder - Main entry point
 import argparse
 import asyncio
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -15,6 +16,7 @@ from app.core.logging import setup_logging
 from app.services.lead_service import LeadService
 from app.services.scheduler_service import SchedulerService
 from app.services.export_service import ExportService
+from app.services.report_service import ReportService
 from app.db.session import init_db
 
 
@@ -31,10 +33,36 @@ def print_smtp_diagnostics() -> None:
         print(f"WARNING: {warning}")
 
 
-def main():
-    # Setup logging
-    setup_logging()
+def build_run_log_path() -> Path:
+    """Build a per-run log file path for one-shot autonomous execution."""
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    return settings.LOG_DIR / "runs" / f"auto_outreach_{timestamp}.log"
 
+
+def print_auto_outreach_summary(summary: dict, report_paths: dict | None = None) -> None:
+    """Print a compact final summary for one-shot auto outreach runs."""
+    print(
+        "Auto outreach completed. "
+        f"leads_found={summary.get('leads_found', 0)} "
+        f"leads_saved={summary.get('leads_saved', 0)} "
+        f"email_sent={summary.get('email_sent', 0)} "
+        f"sms_sent={summary.get('sms_sent', 0)} "
+        f"skipped={summary.get('skipped', 0)} "
+        f"failed={summary.get('failed', 0)} "
+        f"simulated={summary.get('simulated', 0)}"
+    )
+    for row in summary.get("results", []):
+        print(
+            f"- {row.get('business_name')} | {row.get('location')} | "
+            f"channel={row.get('channel_used')} | recipient={row.get('recipient_used') or 'n/a'} | "
+            f"result={row.get('send_result')} | error={row.get('error') or ''}"
+        )
+    if report_paths:
+        print(f"Report JSON: {report_paths.get('json_path', '')}")
+        print(f"Report CSV: {report_paths.get('csv_path', '')}")
+
+
+def main() -> int:
     parser = argparse.ArgumentParser(description="Local Lead Finder")
     parser.add_argument("--collect", action="store_true", help="Run lead collection")
     parser.add_argument("--locations", type=str, help="Comma-separated locations")
@@ -47,6 +75,7 @@ def main():
     parser.add_argument("--only-not-sent", action="store_true", help="Only target leads that have never been sent")
     parser.add_argument("--test-to", type=str, help="Override all recipients with a test email address")
     parser.add_argument("--simulate-send", action="store_true", help="Simulate sending without SMTP delivery")
+    parser.add_argument("--dry-run", action="store_true", help="Safe one-shot autonomous dry run without real delivery")
     parser.add_argument("--send-country", type=str, help="Filter sending by country code")
     parser.add_argument("--send-category", type=str, help="Filter sending by category")
     parser.add_argument("--min-priority", type=float, help="Filter sending by minimum priority score")
@@ -57,16 +86,20 @@ def main():
     parser.add_argument("--check-smtp", action="store_true", help="Show safe SMTP diagnostics without revealing the password")
 
     args = parser.parse_args()
+    simulate_mode = args.simulate_send or args.dry_run
+
+    # Setup logging
+    setup_logging(run_log_file=build_run_log_path() if args.auto_outreach else None)
 
     # Initialize database
     if args.init_db:
         init_db()
         print("Database initialized.")
-        return
+        return 0
 
     if args.check_smtp:
         print_smtp_diagnostics()
-        return
+        return 0
 
     if args.ui:
         import subprocess
@@ -78,19 +111,20 @@ def main():
             env=env,
             check=True
         )
-        return
+        return 0
 
     init_db()
 
     # Initialize services
     lead_service = LeadService()
     export_service = ExportService()
+    report_service = ReportService()
 
     if args.reset_leads:
         deleted = lead_service.reset_leads(clear_search_history=True)
         print(f"Reset completed. {deleted} leads deleted.")
         if not any([args.collect, args.auto_outreach, args.generate_emails, args.export]):
-            return
+            return 0
 
     if args.collect:
         locations = args.locations.split(",") if args.locations else ["Toulouse"]
@@ -107,25 +141,12 @@ def main():
                 categories=categories,
                 limit=args.limit,
                 language=args.lang,
-                simulate=args.simulate_send,
+                simulate=simulate_mode,
             )
         )
-        print(
-            "Auto outreach completed. "
-            f"leads_found={summary.get('leads_found', 0)} "
-            f"leads_saved={summary.get('leads_saved', 0)} "
-            f"email_sent={summary.get('email_sent', 0)} "
-            f"sms_sent={summary.get('sms_sent', 0)} "
-            f"skipped={summary.get('skipped', 0)} "
-            f"failed={summary.get('failed', 0)} "
-            f"simulated={summary.get('simulated', 0)}"
-        )
-        for row in summary.get("results", []):
-            print(
-                f"- {row.get('business_name')} | {row.get('location')} | "
-                f"channel={row.get('channel_used')} | recipient={row.get('recipient_used') or 'n/a'} | "
-                f"result={row.get('send_result')} | error={row.get('error') or ''}"
-            )
+        report_paths = report_service.save_outreach_report(summary, trigger="cli", schedule_name="one_shot_auto_outreach")
+        print_auto_outreach_summary(summary, report_paths)
+        return 1 if summary.get("error") else 0
 
     if args.generate_emails:
         asyncio.run(lead_service.generate_emails())
@@ -140,7 +161,7 @@ def main():
             limit=args.limit,
             only_not_sent=args.only_not_sent,
             test_to=args.test_to,
-            simulate=args.simulate_send,
+            simulate=simulate_mode,
             country=args.send_country,
             category=args.send_category,
             min_priority=args.min_priority,
@@ -179,7 +200,10 @@ def main():
         except KeyboardInterrupt:
             scheduler.stop()
             print("Scheduler stopped.")
+        return 0
+
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
