@@ -41,65 +41,6 @@ def main():
     render_manual_debug_mode()
 
 
-def render_simple_auto_outreach_flow():
-    render_section("Simple Outreach Flow", "Search -> Generate -> Send", "Pick locations and categories, then let the system search, generate and send automatically by email first, then SMS.")
-    step_cols = st.columns([1.4, 1.4, 0.8, 0.9])
-    with step_cols[0]:
-        locations = st.multiselect("Step 1: Locations", SEARCH_LOCATIONS, default=["Geneva", "Sydney"], key="simple_locations")
-    with step_cols[1]:
-        categories = st.multiselect("Step 1: Categories", SEARCH_CATEGORIES, default=["coiffeur"], key="simple_categories")
-    with step_cols[2]:
-        limit = st.number_input("Lead limit", min_value=1, max_value=50, value=10, key="simple_limit")
-    with step_cols[3]:
-        language = st.selectbox("Language", ["fr", "en"], index=0, key="simple_language")
-    control_cols = st.columns([1, 1, 2])
-    with control_cols[0]:
-        simulate = st.checkbox("Dry run", value=False, key="simple_simulate")
-    with control_cols[1]:
-        auto_send_enabled = st.checkbox("Auto-send enabled", value=settings.AUTO_SEND_ENABLED, key="simple_auto_send")
-    with control_cols[2]:
-        if not auto_send_enabled and not simulate:
-            st.warning("Auto-send is disabled in the current config. Enable it here or use dry run.")
-    if st.button("Search and send", type="primary", use_container_width=True):
-        if not (locations and categories):
-            st.error("Select at least one location and one category.")
-        elif not auto_send_enabled and not simulate:
-            st.error("Auto-send is disabled. Enable it or switch to dry run.")
-        else:
-            settings.AUTO_SEND_ENABLED = auto_send_enabled
-            summary = asyncio.run(
-                LeadService().auto_outreach(
-                    locations=locations,
-                    categories=categories,
-                    limit=limit,
-                    language=language,
-                    simulate=simulate,
-                )
-            )
-            st.session_state["last_auto_outreach_summary"] = summary
-            st.success(
-                f"Flow complete. found={summary.get('leads_found', 0)} saved={summary.get('leads_saved', 0)} "
-                f"email_sent={summary.get('email_sent', 0)} sms_sent={summary.get('sms_sent', 0)} "
-                f"skipped={summary.get('skipped', 0)} failed={summary.get('failed', 0)}"
-            )
-    summary = st.session_state.get("last_auto_outreach_summary")
-    if summary:
-        summary_cols = st.columns(5)
-        with summary_cols[0]:
-            render_metric_card("Leads found", str(summary.get("leads_found", 0)), "Collected and analyzed")
-        with summary_cols[1]:
-            render_metric_card("Emails sent", str(summary.get("email_sent", 0)), "Email channel")
-        with summary_cols[2]:
-            render_metric_card("SMS sent", str(summary.get("sms_sent", 0)), "SMS fallback")
-        with summary_cols[3]:
-            render_metric_card("Skipped", str(summary.get("skipped", 0)), "No email and no phone")
-        with summary_cols[4]:
-            render_metric_card("Failed", str(summary.get("failed", 0)), "Send errors")
-        results_df = pd.DataFrame(summary.get("results", []))
-        if not results_df.empty:
-            st.dataframe(results_df, use_container_width=True)
-
-
 def render_automation_center():
     scheduler_service = SchedulerService()
     report_service = ReportService()
@@ -931,21 +872,6 @@ def get_prospects(country=None, location=None, category=None, status=None, has_e
         if min_priority is not None:
             query = query.filter(Prospect.priority_score >= min_priority)
         return query.order_by(Prospect.priority_score.desc(), Prospect.collected_at.desc()).all()
-    finally:
-        db.close()
-
-
-def get_dashboard_metrics():
-    db = SessionLocal()
-    try:
-        total = db.query(Prospect).count()
-        filtered = db.query(Prospect).filter(Prospect.opportunity_score >= 70).count()
-        contacted = db.query(Prospect).filter(Prospect.status.in_(["CONTACTED", "FOLLOW_UP_1", "FOLLOW_UP_2", "WON", "LOST"])).count()
-        won = db.query(Prospect).filter(Prospect.status == "WON").count()
-        conversion_rate = (won / contacted * 100) if contacted > 0 else 0
-        top_value = db.query(Prospect).order_by(Prospect.priority_score.desc()).limit(10).all()
-        estimated_revenue_value = sum((lead.estimated_price_max or 0) for lead in top_value)
-        return {"total": total, "filtered": filtered, "contacted": contacted, "conversion_rate": round(conversion_rate, 1), "estimated_revenue": format_price_range(estimated_revenue_value, estimated_revenue_value, "FR")}
     finally:
         db.close()
 
