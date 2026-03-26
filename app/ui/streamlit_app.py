@@ -4,6 +4,7 @@ Streamlit UI.
 import asyncio
 import json
 import sys
+import time
 from pathlib import Path
 
 import pandas as pd
@@ -57,6 +58,21 @@ AUTO_CATEGORY_OPTIONS = [
     "restaurant",
 ]
 TIME_SLOT_HOURS = {"Matin": 9, "Midi": 13, "Soir": 18}
+MARKET_PRESETS = {
+    "France + Suisse": ["France", "Suisse"],
+    "France": ["France"],
+    "Suisse": ["Suisse"],
+    "Royaume-Uni": ["Royaume-Uni"],
+    "Etats-Unis": ["Etats-Unis"],
+    "Australie": ["Australie"],
+    "Canada": ["Canada"],
+    "International anglophone": ["Royaume-Uni", "Etats-Unis", "Australie", "Canada"],
+}
+SEARCH_VOLUME_PRESETS = {
+    "Prudent": 5,
+    "Equilibre": 10,
+    "Large": 15,
+}
 
 STATUS_LABELS = {
     "IDLE": "En attente",
@@ -175,6 +191,15 @@ def build_daily_cron(selected_slots: list[str]) -> str:
     if not unique_hours:
         return "0 9 * * *"
     return f"0 {','.join(unique_hours)} * * *"
+
+
+def get_recent_config_feedback() -> dict[str, str] | None:
+    saved_at = st.session_state.get("auto_config_saved_at")
+    if not saved_at:
+        return None
+    if time.time() - float(saved_at) > 12:
+        return None
+    return st.session_state.get("auto_config_saved_feedback")
 
 
 def render_automation_center():
@@ -452,112 +477,191 @@ def render_automation_center():
     else:
         st.info("Aucun lead chaud pour le moment. Tu peux marquer les reponses depuis le mode debug.")
 
-    render_section("Configuration", "Configuration simple", "Choisis les pays, les niches et le rythme d'envoi sans toucher aux reglages techniques.")
+    render_section("Configuration", "Configuration simple", "Choisis un marche, coche les moments d'envoi, puis valide. Le reste est rempli automatiquement.")
     configured_locations = split_csv_values(status.get("locations", settings.AUTO_MODE_LOCATIONS))
     configured_categories = split_csv_values(status.get("categories", settings.AUTO_MODE_CATEGORIES))
+    configured_countries = [country for country, cities in AUTO_ZONE_GROUPS.items() if any(city in configured_locations for city in cities)]
     current_time_slots = infer_time_slots(status.get("cron_expression", settings.AUTO_MODE_CRON)) or ["Matin", "Midi", "Soir"]
-    default_countries = [country for country, cities in AUTO_ZONE_GROUPS.items() if any(city in configured_locations for city in cities)]
-    if not default_countries:
-        default_countries = ["France", "Suisse"]
-    zone_options = []
-    for country in default_countries:
-        zone_options.extend(AUTO_ZONE_GROUPS.get(country, []))
-    zone_options = list(dict.fromkeys(zone_options))
-    selected_zone_defaults = [city for city in configured_locations if city in zone_options]
+    preset_by_name = next((name for name, countries in MARKET_PRESETS.items() if countries == configured_countries), None)
+    selected_market_preset = preset_by_name or "France + Suisse"
+    preset_countries = MARKET_PRESETS.get(selected_market_preset, ["France", "Suisse"])
+    zone_pool = list(dict.fromkeys([city for country in preset_countries for city in AUTO_ZONE_GROUPS.get(country, [])]))
+    selected_zone_defaults = [city for city in configured_locations if city in zone_pool] or zone_pool[: min(3, len(zone_pool))]
+    selected_category_defaults = [category for category in configured_categories if category in AUTO_CATEGORY_OPTIONS] or AUTO_CATEGORY_OPTIONS[:6]
     extra_location_defaults = [city for city in configured_locations if city not in {item for cities in AUTO_ZONE_GROUPS.values() for item in cities}]
-    selected_category_defaults = [category for category in configured_categories if category in AUTO_CATEGORY_OPTIONS]
     extra_category_defaults = [category for category in configured_categories if category not in AUTO_CATEGORY_OPTIONS]
-    config_cols = st.columns([1.05, 1.15, 1.2, 0.7, 0.7])
-    with config_cols[0]:
-        auto_countries = st.multiselect("Pays", list(AUTO_ZONE_GROUPS.keys()), default=default_countries, key="auto_cfg_countries")
-    with config_cols[1]:
-        category_selection = st.multiselect("Categories", AUTO_CATEGORY_OPTIONS, default=selected_category_defaults or configured_categories[: min(len(configured_categories), len(AUTO_CATEGORY_OPTIONS))], key="auto_cfg_categories_select")
-    with config_cols[2]:
-        send_slots = st.multiselect("Moments d'envoi", list(TIME_SLOT_HOURS.keys()), default=current_time_slots, key="auto_cfg_time_slots", help="Chaque moment choisi declenche une vague automatique.")
-    with config_cols[3]:
-        auto_limit = st.number_input("Limite", min_value=1, max_value=50, value=int(status.get("limit", settings.AUTO_MODE_LIMIT)), key="auto_cfg_limit")
-    with config_cols[4]:
-        auto_language = st.selectbox("Langue", ["fr", "en"], index=0 if status.get("language", "fr") == "fr" else 1, key="auto_cfg_language")
-    zone_pool = []
-    for country in auto_countries:
-        zone_pool.extend(AUTO_ZONE_GROUPS.get(country, []))
-    zone_pool = list(dict.fromkeys(zone_pool))
-    advanced_scope_cols = st.columns(2)
-    with advanced_scope_cols[0]:
-        location_selection = st.multiselect("Zones", zone_pool, default=[city for city in selected_zone_defaults if city in zone_pool], key="auto_cfg_locations_select", help="Selectionne les villes a cibler parmi les pays choisis.")
-        extra_locations = st.text_input("Autres zones (optionnel)", value=",".join(extra_location_defaults), key="auto_cfg_locations_extra", help="Ajoute ici une ville hors liste, separee par des virgules si besoin.")
-    with advanced_scope_cols[1]:
-        extra_categories = st.text_input("Autres categories (optionnel)", value=",".join(extra_category_defaults), key="auto_cfg_categories_extra", help="Ajoute ici une categorie hors liste, separee par des virgules si besoin.")
-    auto_locations = join_csv_values(location_selection, extra_locations)
-    auto_categories = join_csv_values(category_selection, extra_categories)
-    runtime_cols = st.columns([1, 1, 1.1])
-    with runtime_cols[0]:
-        send_max_per_run = st.number_input("Emails par vague", min_value=1, max_value=10, value=min(int(settings.SEND_MAX_PER_RUN), 3), key="auto_cfg_send_cap")
-    with runtime_cols[1]:
-        auto_enabled = st.checkbox("Mode auto actif", value=bool(status.get("enabled")), key="auto_cfg_enabled")
-    with runtime_cols[2]:
-        estimated_daily_volume = max(1, len(send_slots)) * int(send_max_per_run)
+    inferred_volume = next((label for label, value in SEARCH_VOLUME_PRESETS.items() if int(status.get("limit", settings.AUTO_MODE_LIMIT)) <= value), "Equilibre")
+    strict_quality_default = int(settings.AUTO_MODE_MIN_OPPORTUNITY_SCORE) >= 75
+    deep_search_default = int(settings.AUTO_MODE_CONTACT_CANDIDATE_MULTIPLIER) >= 14
+    recent_feedback = get_recent_config_feedback()
+    rotation_configs = scheduler_service.list_rotation_configs()
+
+    if recent_feedback:
+        st.success(
+            "Configuration validee. "
+            f"Marche: {recent_feedback.get('market', 'N/A')} | "
+            f"Emails / jour: {recent_feedback.get('daily_volume', '0')} | "
+            f"Planning: {recent_feedback.get('cron', 'N/A')}"
+        )
+
+    if rotation_configs:
+        st.caption("Rotation actuelle")
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {
+                        "Ordre": config["index"] + 1,
+                        "Configuration": config.get("name", ""),
+                        "Pays": config.get("country", ""),
+                        "Categorie": config.get("primary_category", ""),
+                        "Zones": ", ".join(config.get("locations", [])),
+                        "Limite": config.get("limit", 0),
+                        "Langue": config.get("language", ""),
+                    }
+                    for config in rotation_configs
+                ]
+            ),
+            hide_index=True,
+            use_container_width=True,
+        )
+
+    with st.form("simple_auto_config_form"):
+        top_cols = st.columns([1.1, 1.2, 0.9])
+        with top_cols[0]:
+            market_preset = st.selectbox("Marche cible", list(MARKET_PRESETS.keys()), index=list(MARKET_PRESETS.keys()).index(selected_market_preset))
+        with top_cols[1]:
+            category_selection = st.multiselect("Categories", AUTO_CATEGORY_OPTIONS, default=selected_category_defaults)
+        with top_cols[2]:
+            volume_choice = st.selectbox("Volume de recherche", list(SEARCH_VOLUME_PRESETS.keys()), index=list(SEARCH_VOLUME_PRESETS.keys()).index(inferred_volume))
+
+        active_countries = MARKET_PRESETS.get(market_preset, ["France", "Suisse"])
+        active_zone_pool = list(dict.fromkeys([city for country in active_countries for city in AUTO_ZONE_GROUPS.get(country, [])]))
+        scope_cols = st.columns(2)
+        with scope_cols[0]:
+            location_selection = st.multiselect("Zones", active_zone_pool, default=[city for city in selected_zone_defaults if city in active_zone_pool])
+        with scope_cols[1]:
+            extra_locations = st.text_input("Zone supplementaire (optionnel)", value=",".join(extra_location_defaults))
+
+        schedule_cols = st.columns(4)
+        with schedule_cols[0]:
+            send_morning = st.checkbox("Matin", value="Matin" in current_time_slots)
+        with schedule_cols[1]:
+            send_midday = st.checkbox("Midi", value="Midi" in current_time_slots)
+        with schedule_cols[2]:
+            send_evening = st.checkbox("Soir", value="Soir" in current_time_slots)
+        with schedule_cols[3]:
+            auto_enabled = st.checkbox("Mode auto actif", value=bool(status.get("enabled")))
+
+        option_cols = st.columns(3)
+        with option_cols[0]:
+            strict_quality = st.checkbox("Qualite stricte", value=strict_quality_default, help="Garde moins de leads, mais plus propres.")
+        with option_cols[1]:
+            deep_search = st.checkbox("Recherche approfondie", value=deep_search_default, help="Cherche plus large avant de filtrer.")
+        with option_cols[2]:
+            auto_language = st.selectbox("Langue", ["fr", "en"], index=0 if status.get("language", "fr") == "fr" else 1)
+
+        with st.expander("Options secondaires", expanded=False):
+            extra_categories = st.text_input("Categories supplementaires", value=",".join(extra_category_defaults))
+            send_delay_seconds = st.number_input("Delai entre envois", min_value=0.0, max_value=30.0, value=float(settings.SEND_DELAY_SECONDS), step=0.5)
+
+        chosen_slots = [label for label, enabled in [("Matin", send_morning), ("Midi", send_midday), ("Soir", send_evening)] if enabled]
+        estimated_daily_volume = len(chosen_slots)
         render_key_value_card(
-            "Rythme actif",
+            "Resume",
             [
-                ("Moments choisis", ", ".join(send_slots) if send_slots else "Aucun"),
-                ("Emails par vague", str(int(send_max_per_run))),
-                ("Objectif par jour", str(estimated_daily_volume)),
-                ("Planning calcule", build_daily_cron(send_slots)),
+                ("Marche", market_preset),
+                ("Zones actives", str(len(location_selection) + len(split_csv_values(extra_locations)))),
+                ("Categories", str(len(category_selection) + len(split_csv_values(extra_categories)))),
+                ("Emails / jour", str(estimated_daily_volume)),
+                ("Planning", build_daily_cron(chosen_slots)),
             ],
         )
-    with st.expander("Reglages avances", expanded=False):
-        advanced_cols = st.columns(3)
-        with advanced_cols[0]:
-            send_delay_seconds = st.number_input("Delai entre envois", min_value=0.0, max_value=30.0, value=float(settings.SEND_DELAY_SECONDS), step=0.5, key="auto_cfg_send_delay")
-        with advanced_cols[1]:
-            candidate_multiplier = st.number_input("Profondeur de recherche", min_value=2, max_value=40, value=int(settings.AUTO_MODE_CONTACT_CANDIDATE_MULTIPLIER), key="auto_cfg_candidate_multiplier")
-        with advanced_cols[2]:
-            min_opportunity_score = st.number_input("Score d'opportunite mini", min_value=0, max_value=100, value=int(settings.AUTO_MODE_MIN_OPPORTUNITY_SCORE), key="auto_cfg_min_score")
-        st.caption("Le cron est maintenant calcule automatiquement a partir des moments d'envoi choisis.")
-    config_action_cols = st.columns([1, 2])
-    with config_action_cols[1]:
-        if st.button("Enregistrer la configuration", key="save_automation_config", use_container_width=True):
-            if not send_slots:
-                st.error("Choisis au moins un moment d'envoi.")
-                return
-            auto_cron = build_daily_cron(send_slots)
-            settings.AUTO_MODE_LOCATIONS = auto_locations
-            settings.AUTO_MODE_CATEGORIES = auto_categories
-            settings.AUTO_MODE_LIMIT = int(auto_limit)
-            settings.AUTO_MODE_LANGUAGE = auto_language
-            settings.AUTO_MODE_CRON = auto_cron
-            settings.AUTO_MODE_ENABLED = auto_enabled
-            settings.SEND_MAX_PER_RUN = int(send_max_per_run)
-            settings.SEND_BATCH_SIZE = int(send_max_per_run)
-            settings.SEND_DELAY_SECONDS = float(send_delay_seconds)
-            settings.AUTO_MODE_CONTACT_CANDIDATE_MULTIPLIER = int(candidate_multiplier)
-            settings.AUTO_MODE_MIN_OPPORTUNITY_SCORE = int(min_opportunity_score)
-            scheduler_service.update_auto_schedule(
-                cron_expression=auto_cron,
-                locations=auto_locations,
-                categories=auto_categories,
-                limit=int(auto_limit),
-                language=auto_language,
-                enabled=auto_enabled,
-            )
-            persist_runtime_config(
-                {
-                    "AUTO_MODE_ENABLED": auto_enabled,
-                    "AUTO_MODE_CRON": auto_cron,
-                    "AUTO_MODE_LOCATIONS": auto_locations,
-                    "AUTO_MODE_CATEGORIES": auto_categories,
-                    "AUTO_MODE_LIMIT": int(auto_limit),
-                    "AUTO_MODE_LANGUAGE": auto_language,
-                    "SEND_MAX_PER_RUN": int(send_max_per_run),
-                    "SEND_BATCH_SIZE": int(send_max_per_run),
-                    "SEND_DELAY_SECONDS": float(send_delay_seconds),
-                    "AUTO_MODE_CONTACT_CANDIDATE_MULTIPLIER": int(candidate_multiplier),
-                    "AUTO_MODE_MIN_OPPORTUNITY_SCORE": int(min_opportunity_score),
-                }
-            )
-            st.success("Configuration d'automatisation mise a jour.")
+
+        submit_label = "Configuration validee" if recent_feedback else "Valider la configuration"
+        submit_cols = st.columns(2)
+        with submit_cols[0]:
+            save_clicked = st.form_submit_button(submit_label, type="primary", use_container_width=True)
+        with submit_cols[1]:
+            add_rotation_clicked = st.form_submit_button("Ajouter a la rotation", use_container_width=True)
+
+    if save_clicked or add_rotation_clicked:
+        if not chosen_slots:
+            st.error("Coche au moins un moment d'envoi.")
+            return
+        auto_locations = join_csv_values(location_selection, extra_locations)
+        auto_categories = join_csv_values(category_selection, extra_categories)
+        if not auto_locations:
+            st.error("Choisis au moins une zone.")
+            return
+        if not auto_categories:
+            st.error("Choisis au moins une categorie.")
+            return
+
+        auto_cron = build_daily_cron(chosen_slots)
+        auto_limit = SEARCH_VOLUME_PRESETS.get(volume_choice, 10)
+        send_max_per_run = 1
+        candidate_multiplier = 16 if deep_search else 10
+        min_opportunity_score = 80 if strict_quality else 65
+        rotation_config = {
+            "name": f"{market_preset} | {category_selection[0] if category_selection else 'niche'}",
+            "locations": [item.strip() for item in auto_locations.split(",") if item.strip()],
+            "categories": [item.strip() for item in auto_categories.split(",") if item.strip()],
+            "language": auto_language,
+            "limit": int(auto_limit),
+        }
+
+        if add_rotation_clicked:
+            total_configs = scheduler_service.append_rotation_config(rotation_config)
+            st.session_state["auto_config_saved_at"] = time.time()
+            st.session_state["auto_config_saved_feedback"] = {
+                "market": market_preset,
+                "daily_volume": str(estimated_daily_volume),
+                "cron": f"Rotation active ({total_configs} configurations)",
+            }
             st.rerun()
+
+        settings.AUTO_MODE_LOCATIONS = auto_locations
+        settings.AUTO_MODE_CATEGORIES = auto_categories
+        settings.AUTO_MODE_LIMIT = int(auto_limit)
+        settings.AUTO_MODE_LANGUAGE = auto_language
+        settings.AUTO_MODE_CRON = auto_cron
+        settings.AUTO_MODE_ENABLED = auto_enabled
+        settings.SEND_MAX_PER_RUN = int(send_max_per_run)
+        settings.SEND_BATCH_SIZE = int(send_max_per_run)
+        settings.SEND_DELAY_SECONDS = float(send_delay_seconds)
+        settings.AUTO_MODE_CONTACT_CANDIDATE_MULTIPLIER = int(candidate_multiplier)
+        settings.AUTO_MODE_MIN_OPPORTUNITY_SCORE = int(min_opportunity_score)
+        scheduler_service.reset_rotation_to_single_config(rotation_config)
+        scheduler_service.update_auto_schedule(
+            cron_expression=auto_cron,
+            locations=auto_locations,
+            categories=auto_categories,
+            limit=int(auto_limit),
+            language=auto_language,
+            enabled=auto_enabled,
+        )
+        persist_runtime_config(
+            {
+                "AUTO_MODE_ENABLED": auto_enabled,
+                "AUTO_MODE_CRON": auto_cron,
+                "AUTO_MODE_LOCATIONS": auto_locations,
+                "AUTO_MODE_CATEGORIES": auto_categories,
+                "AUTO_MODE_LIMIT": int(auto_limit),
+                "AUTO_MODE_LANGUAGE": auto_language,
+                "SEND_MAX_PER_RUN": int(send_max_per_run),
+                "SEND_BATCH_SIZE": int(send_max_per_run),
+                "SEND_DELAY_SECONDS": float(send_delay_seconds),
+                "AUTO_MODE_CONTACT_CANDIDATE_MULTIPLIER": int(candidate_multiplier),
+                "AUTO_MODE_MIN_OPPORTUNITY_SCORE": int(min_opportunity_score),
+            }
+        )
+        st.session_state["auto_config_saved_at"] = time.time()
+        st.session_state["auto_config_saved_feedback"] = {
+            "market": market_preset,
+            "daily_volume": str(estimated_daily_volume),
+            "cron": auto_cron,
+        }
+        st.rerun()
 
     if status.get("last_error"):
         st.warning(f"Derniere erreur : {status.get('last_error')}")

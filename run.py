@@ -166,30 +166,53 @@ def main() -> int:
         print(f"Lead collection completed. {saved_count} leads saved.")
 
     if args.auto_outreach:
-        locations = (
-            [item.strip() for item in args.locations.split(",") if item.strip()]
-            if args.locations
-            else [item.strip() for item in settings.AUTO_MODE_LOCATIONS.split(",") if item.strip()]
+        uses_explicit_scope = any(
+            [
+                bool(args.locations),
+                bool(args.categories),
+                args.limit != settings.DEFAULT_PROSPECTS_PER_LOCATION,
+                args.lang != settings.DEFAULT_LANGUAGE,
+            ]
         )
-        categories = (
-            [item.strip() for item in args.categories.split(",") if item.strip()]
-            if args.categories
-            else [item.strip() for item in settings.AUTO_MODE_CATEGORIES.split(",") if item.strip()]
-        )
-        limit = args.limit if args.limit != settings.DEFAULT_PROSPECTS_PER_LOCATION else settings.AUTO_MODE_LIMIT
-        language = args.lang if args.lang != settings.DEFAULT_LANGUAGE else settings.AUTO_MODE_LANGUAGE
         print_auto_outreach_preflight(lead_service.get_auto_outreach_preflight(simulate=simulate_mode))
-        summary = asyncio.run(
-            lead_service.auto_outreach(
-                locations=locations,
-                categories=categories,
-                limit=limit,
-                language=language,
-                simulate=simulate_mode,
+        if uses_explicit_scope:
+            locations = (
+                [item.strip() for item in args.locations.split(",") if item.strip()]
+                if args.locations
+                else [item.strip() for item in settings.AUTO_MODE_LOCATIONS.split(",") if item.strip()]
             )
-        )
-        report_paths = report_service.save_outreach_report(summary, trigger="cli", schedule_name="one_shot_auto_outreach")
-        scheduler_service.record_external_run(trigger="cli", summary=summary, report_paths=report_paths)
+            categories = (
+                [item.strip() for item in args.categories.split(",") if item.strip()]
+                if args.categories
+                else [item.strip() for item in settings.AUTO_MODE_CATEGORIES.split(",") if item.strip()]
+            )
+            limit = args.limit if args.limit != settings.DEFAULT_PROSPECTS_PER_LOCATION else settings.AUTO_MODE_LIMIT
+            language = args.lang if args.lang != settings.DEFAULT_LANGUAGE else settings.AUTO_MODE_LANGUAGE
+            summary = asyncio.run(
+                lead_service.auto_outreach(
+                    locations=locations,
+                    categories=categories,
+                    limit=limit,
+                    language=language,
+                    simulate=simulate_mode,
+                )
+            )
+            summary["config_used"] = {
+                "name": "CLI explicit scope",
+                "locations": locations,
+                "categories": categories,
+                "language": language,
+                "limit": limit,
+                "primary_category": categories[0] if categories else "",
+            }
+            report_paths = report_service.save_outreach_report(summary, trigger="cli", schedule_name="one_shot_auto_outreach")
+            scheduler_service.record_external_run(trigger="cli", summary=summary, report_paths=report_paths)
+        else:
+            summary = scheduler_service.run_auto_outreach_now(simulate=simulate_mode)
+            report_paths = {
+                "json_path": summary.get("json_path", ""),
+                "csv_path": summary.get("csv_path", ""),
+            }
         print_auto_outreach_summary(summary, report_paths)
         return 1 if summary.get("error") else 0
 

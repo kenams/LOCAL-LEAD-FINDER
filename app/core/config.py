@@ -69,6 +69,7 @@ class Settings:
         "AUTO_MODE_CATEGORIES",
         "marketing,consultant,agency,web design,seo,coach,accountant,lawyer,financial advisor,real estate",
     )
+    AUTO_MODE_ROTATION_CONFIGS: str = os.getenv("AUTO_MODE_ROTATION_CONFIGS", "")
     AUTO_MODE_LIMIT: int = int(os.getenv("AUTO_MODE_LIMIT", 10))
     AUTO_MODE_LANGUAGE: str = os.getenv("AUTO_MODE_LANGUAGE", "fr")
     AUTO_MODE_REQUIRE_EMAIL_AND_PHONE: bool = os.getenv("AUTO_MODE_REQUIRE_EMAIL_AND_PHONE", "false").lower() == "true"

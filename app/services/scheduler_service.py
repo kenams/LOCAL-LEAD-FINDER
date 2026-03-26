@@ -4,6 +4,7 @@ Scheduler service.
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import datetime
 from typing import Any
 
@@ -11,6 +12,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from app.core.config import settings
+from app.core.country_config import detect_country, get_country_display_name
 from app.core.logging import logger
 from app.db.session import SessionLocal
 from app.models.schedule import Schedule
@@ -55,6 +57,9 @@ class SchedulerService:
                 schedule.limit_per_location = settings.AUTO_MODE_LIMIT
                 schedule.language = settings.AUTO_MODE_LANGUAGE
                 schedule.enabled = settings.AUTO_MODE_ENABLED
+                schedule.configs_json = self._serialize_rotation_configs(
+                    self._load_rotation_configs_from_settings_or_schedule(schedule)
+                )
                 db.commit()
                 db.refresh(schedule)
                 return schedule.id
@@ -68,6 +73,7 @@ class SchedulerService:
                 language=settings.AUTO_MODE_LANGUAGE,
                 enabled=settings.AUTO_MODE_ENABLED,
                 last_status="IDLE",
+                configs_json=self._serialize_rotation_configs(self._load_rotation_configs_from_settings_or_schedule(None)),
             )
             db.add(schedule)
             db.commit()
@@ -91,6 +97,10 @@ class SchedulerService:
             schedule.language = language
             schedule.enabled = enabled
             schedule.next_run = self._calculate_next_run(cron_expression) if enabled else None
+            if not self._load_rotation_configs_from_schedule(schedule):
+                schedule.configs_json = self._serialize_rotation_configs(
+                    [self._build_rotation_config(locations=locations, categories=categories, language=language, limit=limit)]
+                )
             db.commit()
             db.refresh(schedule)
             self._reschedule(schedule)
@@ -123,6 +133,9 @@ class SchedulerService:
                 "last_status": schedule.last_status if schedule else "IDLE",
                 "last_error": schedule.last_error if schedule else "",
                 "last_report_path": schedule.last_report_path if schedule else "",
+                "last_used_config_index": schedule.last_used_config_index if schedule else None,
+                "last_run_config": self._deserialize_json_object(schedule.last_run_config) if schedule and schedule.last_run_config else None,
+                "rotation_config_count": len(self._load_rotation_configs_from_schedule(schedule)) if schedule else 0,
                 "next_run": next_run,
             }
         finally:
@@ -143,6 +156,10 @@ class SchedulerService:
             schedule.last_status = "SUCCESS" if not summary.get("error") else "FAILED"
             schedule.last_error = summary.get("error", "")
             schedule.last_report_path = report_paths.get("json_path", "")
+            if summary.get("config_used"):
+                schedule.last_run_config = json.dumps(summary.get("config_used"), ensure_ascii=False)
+                if summary.get("config_used_index") is not None:
+                    schedule.last_used_config_index = int(summary["config_used_index"])
             schedule.next_run = self._calculate_next_run(schedule.cron_expression)
             db.commit()
             logger.info(f"Recorded external autonomous outreach run ({trigger})")
@@ -160,6 +177,76 @@ class SchedulerService:
             if not schedule:
                 return {"failed": 1, "error": "missing_schedule"}
             return asyncio.run(self._execute_schedule(schedule.id, trigger="manual", simulate=simulate))
+        finally:
+            db.close()
+
+    def get_rotating_config_for_run(self) -> dict[str, Any]:
+        """Return the next rotating configuration for a one-shot run without mutating persistence."""
+        db = SessionLocal()
+        try:
+            schedule = db.query(Schedule).filter(Schedule.name == settings.AUTO_MODE_NAME).first()
+            if not schedule:
+                self.ensure_auto_schedule()
+                schedule = db.query(Schedule).filter(Schedule.name == settings.AUTO_MODE_NAME).first()
+            if not schedule:
+                return self._build_rotation_config(
+                    locations=settings.AUTO_MODE_LOCATIONS,
+                    categories=settings.AUTO_MODE_CATEGORIES,
+                    language=settings.AUTO_MODE_LANGUAGE,
+                    limit=settings.AUTO_MODE_LIMIT,
+                )
+            config, index, total = self._select_next_rotation_config(schedule)
+            return {**config, "index": index, "rotation_size": total}
+        finally:
+            db.close()
+
+    def list_rotation_configs(self) -> list[dict[str, Any]]:
+        """Return the persisted rotation configs for the autonomous schedule."""
+        db = SessionLocal()
+        try:
+            schedule = db.query(Schedule).filter(Schedule.name == settings.AUTO_MODE_NAME).first()
+            configs = self._load_rotation_configs_from_settings_or_schedule(schedule)
+            return [{**config, "index": index} for index, config in enumerate(configs)]
+        finally:
+            db.close()
+
+    def append_rotation_config(self, config: dict[str, Any]) -> int:
+        """Append one configuration to the persisted rotation list if it is new."""
+        db = SessionLocal()
+        try:
+            schedule = db.query(Schedule).filter(Schedule.name == settings.AUTO_MODE_NAME).first()
+            if not schedule:
+                self.ensure_auto_schedule()
+                schedule = db.query(Schedule).filter(Schedule.name == settings.AUTO_MODE_NAME).first()
+            if not schedule:
+                return 0
+            configs = self._load_rotation_configs_from_settings_or_schedule(schedule)
+            normalized = self._normalize_rotation_config(config, len(configs))
+            signature = self._rotation_signature(normalized)
+            existing_signatures = {self._rotation_signature(item) for item in configs}
+            if signature not in existing_signatures:
+                configs.append(normalized)
+                schedule.configs_json = self._serialize_rotation_configs(configs)
+                db.commit()
+            return len(configs)
+        finally:
+            db.close()
+
+    def reset_rotation_to_single_config(self, config: dict[str, Any]) -> None:
+        """Replace the rotation list with a single configuration."""
+        db = SessionLocal()
+        try:
+            schedule = db.query(Schedule).filter(Schedule.name == settings.AUTO_MODE_NAME).first()
+            if not schedule:
+                self.ensure_auto_schedule()
+                schedule = db.query(Schedule).filter(Schedule.name == settings.AUTO_MODE_NAME).first()
+            if not schedule:
+                return
+            normalized = self._normalize_rotation_config(config, 0)
+            schedule.configs_json = self._serialize_rotation_configs([normalized])
+            schedule.last_used_config_index = None
+            schedule.last_run_config = None
+            db.commit()
         finally:
             db.close()
 
@@ -231,6 +318,113 @@ class SchedulerService:
         except Exception:
             return None
 
+    def _split_csv(self, raw_value: str | None) -> list[str]:
+        return [item.strip() for item in str(raw_value or "").split(",") if item.strip()]
+
+    def _build_rotation_config(self, *, locations: str | list[str], categories: str | list[str], language: str, limit: int, name: str | None = None) -> dict[str, Any]:
+        location_items = locations if isinstance(locations, list) else self._split_csv(locations)
+        category_items = categories if isinstance(categories, list) else self._split_csv(categories)
+        primary_location = location_items[0] if location_items else ""
+        country_code = detect_country(primary_location)
+        country_name = get_country_display_name(country_code) if primary_location else ""
+        primary_category = category_items[0] if category_items else ""
+        config_name = name or " | ".join(part for part in [country_name or primary_location, primary_category] if part) or "Configuration auto"
+        return {
+            "name": config_name,
+            "locations": location_items,
+            "categories": category_items,
+            "language": language or settings.AUTO_MODE_LANGUAGE,
+            "limit": int(limit or settings.AUTO_MODE_LIMIT),
+            "country": country_name,
+            "primary_category": primary_category,
+        }
+
+    def _normalize_rotation_config(self, raw_config: dict[str, Any], fallback_index: int = 0) -> dict[str, Any]:
+        return self._build_rotation_config(
+            locations=raw_config.get("locations", settings.AUTO_MODE_LOCATIONS),
+            categories=raw_config.get("categories", settings.AUTO_MODE_CATEGORIES),
+            language=str(raw_config.get("language", settings.AUTO_MODE_LANGUAGE)),
+            limit=int(raw_config.get("limit", settings.AUTO_MODE_LIMIT) or settings.AUTO_MODE_LIMIT),
+            name=raw_config.get("name") or raw_config.get("label") or f"Configuration {fallback_index + 1}",
+        )
+
+    def _load_rotation_configs_from_settings_or_schedule(self, schedule: Schedule | None) -> list[dict[str, Any]]:
+        schedule_configs = self._load_rotation_configs_from_schedule(schedule)
+        if schedule_configs:
+            return schedule_configs
+        if schedule:
+            return [
+                self._build_rotation_config(
+                    locations=schedule.locations,
+                    categories=schedule.categories,
+                    language=schedule.language,
+                    limit=schedule.limit_per_location,
+                )
+            ]
+        raw_settings = (settings.AUTO_MODE_ROTATION_CONFIGS or "").strip()
+        if raw_settings:
+            try:
+                payload = json.loads(raw_settings)
+                if isinstance(payload, list):
+                    configs = [self._normalize_rotation_config(item, index) for index, item in enumerate(payload) if isinstance(item, dict)]
+                    if configs:
+                        return configs
+            except Exception as exc:
+                logger.warning(f"Could not parse AUTO_MODE_ROTATION_CONFIGS: {exc}")
+        return [
+            self._build_rotation_config(
+                locations=settings.AUTO_MODE_LOCATIONS,
+                categories=settings.AUTO_MODE_CATEGORIES,
+                language=settings.AUTO_MODE_LANGUAGE,
+                limit=settings.AUTO_MODE_LIMIT,
+            )
+        ]
+
+    def _load_rotation_configs_from_schedule(self, schedule: Schedule | None) -> list[dict[str, Any]]:
+        if not schedule or not schedule.configs_json:
+            return []
+        try:
+            payload = json.loads(schedule.configs_json)
+            if not isinstance(payload, list):
+                return []
+            return [self._normalize_rotation_config(item, index) for index, item in enumerate(payload) if isinstance(item, dict)]
+        except Exception as exc:
+            logger.warning(f"Could not parse stored rotation configs: {exc}")
+            return []
+
+    def _serialize_rotation_configs(self, configs: list[dict[str, Any]]) -> str:
+        return json.dumps(configs, ensure_ascii=False)
+
+    def _rotation_signature(self, config: dict[str, Any]) -> tuple[Any, ...]:
+        return (
+            tuple(config.get("locations", [])),
+            tuple(config.get("categories", [])),
+            config.get("language", ""),
+            int(config.get("limit", 0) or 0),
+        )
+
+    def _deserialize_json_object(self, raw_value: str) -> dict[str, Any] | None:
+        try:
+            payload = json.loads(raw_value)
+            return payload if isinstance(payload, dict) else None
+        except Exception:
+            return None
+
+    def _select_next_rotation_config(self, schedule: Schedule) -> tuple[dict[str, Any], int, int]:
+        configs = self._load_rotation_configs_from_settings_or_schedule(schedule)
+        total = len(configs)
+        if total == 0:
+            config = self._build_rotation_config(
+                locations=schedule.locations,
+                categories=schedule.categories,
+                language=schedule.language,
+                limit=schedule.limit_per_location,
+            )
+            return config, 0, 1
+        last_index = schedule.last_used_config_index if schedule.last_used_config_index is not None else -1
+        next_index = (int(last_index) + 1) % total
+        return configs[next_index], next_index, total
+
     def _backfill_from_latest_report(self, schedule: Schedule, db) -> None:
         """Hydrate schedule status from the latest saved report when runs happened outside the in-process scheduler."""
         latest_report = next(iter(self.report_service.list_reports(limit=1)), None)
@@ -266,24 +460,34 @@ class SchedulerService:
             schedule.last_status = "RUNNING"
             schedule.last_error = ""
             db.commit()
+            active_config, next_index, rotation_size = self._select_next_rotation_config(schedule)
+            locations = list(active_config.get("locations", []))
+            categories = list(active_config.get("categories", []))
+            language = str(active_config.get("language") or schedule.language or settings.AUTO_MODE_LANGUAGE)
+            limit = int(active_config.get("limit") or schedule.limit_per_location or settings.AUTO_MODE_LIMIT)
 
-            locations = [item.strip() for item in schedule.locations.split(",") if item.strip()]
-            categories = [item.strip() for item in schedule.categories.split(",") if item.strip()]
-
-            logger.info(f"Running autonomous outreach: {schedule.name}")
+            logger.info(
+                f"Running autonomous outreach: {schedule.name} "
+                f"(rotation_index={next_index}, config={active_config.get('name', '')}, locations={locations}, categories={categories})"
+            )
             summary = await self.lead_service.auto_outreach(
                 locations=locations,
                 categories=categories,
-                limit=schedule.limit_per_location,
-                language=schedule.language,
+                limit=limit,
+                language=language,
                 simulate=simulate,
             )
+            summary["config_used"] = active_config
+            summary["config_used_index"] = next_index
+            summary["rotation_size"] = rotation_size
             report_paths = self.report_service.save_outreach_report(summary, trigger=trigger, schedule_name=schedule.name)
 
             schedule.last_run = datetime.utcnow()
             schedule.last_status = "SUCCESS" if not summary.get("error") else "FAILED"
             schedule.last_error = summary.get("error", "")
             schedule.last_report_path = report_paths["json_path"]
+            schedule.last_used_config_index = next_index
+            schedule.last_run_config = json.dumps(active_config, ensure_ascii=False)
             db.commit()
             self._refresh_next_run_times()
             return {**summary, **report_paths}

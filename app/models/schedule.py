@@ -21,6 +21,9 @@ class Schedule(Base):
     last_status = Column(String, default="IDLE")
     last_error = Column(Text)
     last_report_path = Column(String)
+    configs_json = Column(Text)
+    last_used_config_index = Column(Integer)
+    last_run_config = Column(Text)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     def __repr__(self):

@@ -29,6 +29,17 @@ def test_report_service_saves_and_lists_reports(monkeypatch, tmp_path: Path):
     paths = service.save_outreach_report(
         {
             "leads_found": 5,
+            "config_used": {
+                "name": "Switzerland | consultant",
+                "locations": ["Geneva", "Lausanne"],
+                "categories": ["consultant"],
+                "language": "fr",
+                "limit": 10,
+                "country": "Switzerland",
+                "primary_category": "consultant",
+            },
+            "config_used_index": 1,
+            "rotation_size": 3,
             "validated_leads": 3,
             "validation_skipped": 2,
             "validation_reasons": {"no website": 1, "no contact method": 1},
@@ -58,6 +69,9 @@ def test_report_service_saves_and_lists_reports(monkeypatch, tmp_path: Path):
     reports = service.list_reports(limit=5)
     assert len(reports) == 1
     assert reports[0]["raw_found"] == 5
+    assert reports[0]["config_name"] == "Switzerland | consultant"
+    assert reports[0]["config_country"] == "Switzerland"
+    assert reports[0]["config_category"] == "consultant"
     assert reports[0]["validated_leads"] == 3
     assert reports[0]["contact_ready"] == 0
     assert reports[0]["early_stage_businesses"] == 2
@@ -67,6 +81,9 @@ def test_report_service_saves_and_lists_reports(monkeypatch, tmp_path: Path):
     assert reports[0]["won"] == 1
     payload = service.load_report(paths["json_path"])
     assert payload["summary"]["email_sent"] == 2
+    assert payload["config_used"]["name"] == "Switzerland | consultant"
+    assert payload["config_used"]["index"] == 1
+    assert payload["config_used"]["rotation_size"] == 3
     assert payload["quality_funnel"]["raw_found"] == 5
     assert payload["quality_funnel"]["high_opportunity_leads"] == 3
     assert payload["quality_funnel"]["website_sent"] == 1

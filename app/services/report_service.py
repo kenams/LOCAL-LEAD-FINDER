@@ -11,6 +11,7 @@ from typing import Any
 import pandas as pd
 
 from app.core.config import settings
+from app.core.country_config import detect_country, get_country_display_name
 from app.core.logging import logger
 from app.db.session import SessionLocal
 from app.models.prospect import Prospect
@@ -30,6 +31,7 @@ class ReportService:
             "generated_at": now.isoformat(),
             "trigger": trigger,
             "schedule_name": schedule_name,
+            "config_used": self._extract_config_used(summary),
             "summary": summary,
             "quality_funnel": self._build_quality_funnel(summary),
             "validation_reasons": summary.get("validation_reasons", {}),
@@ -57,6 +59,9 @@ class ReportService:
                         "generated_at": payload.get("generated_at"),
                         "trigger": payload.get("trigger"),
                         "schedule_name": payload.get("schedule_name"),
+                        "config_name": payload.get("config_used", {}).get("name", ""),
+                        "config_country": payload.get("config_used", {}).get("country", ""),
+                        "config_category": payload.get("config_used", {}).get("primary_category", ""),
                         "raw_found": summary.get("raw_found", summary.get("leads_found", 0)),
                         "leads_found": summary.get("leads_found", 0),
                         "validated_leads": summary.get("validated_leads", 0),
@@ -93,6 +98,29 @@ class ReportService:
         except Exception as exc:
             logger.warning(f"Could not load report {target}: {exc}")
             return None
+
+    def _extract_config_used(self, summary: dict[str, Any]) -> dict[str, Any]:
+        config_used = summary.get("config_used", {})
+        if not isinstance(config_used, dict):
+            return {}
+        locations = config_used.get("locations", [])
+        categories = config_used.get("categories", [])
+        location_list = locations if isinstance(locations, list) else [item.strip() for item in str(locations).split(",") if item.strip()]
+        category_list = categories if isinstance(categories, list) else [item.strip() for item in str(categories).split(",") if item.strip()]
+        primary_location = location_list[0] if location_list else ""
+        country_name = config_used.get("country") or (get_country_display_name(detect_country(primary_location)) if primary_location else "")
+        primary_category = config_used.get("primary_category") or (category_list[0] if category_list else "")
+        return {
+            "name": config_used.get("name", ""),
+            "locations": location_list,
+            "categories": category_list,
+            "language": config_used.get("language", ""),
+            "limit": int(config_used.get("limit", 0) or 0),
+            "country": country_name,
+            "primary_category": primary_category,
+            "index": config_used.get("index", summary.get("config_used_index")),
+            "rotation_size": summary.get("rotation_size"),
+        }
 
     def _select_top_prospects(self, results: list[dict[str, Any]]) -> list[dict[str, Any]]:
         contacted = [row for row in results if row.get("send_result") == "SENT"]

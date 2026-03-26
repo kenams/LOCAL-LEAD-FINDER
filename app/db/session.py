@@ -114,6 +114,9 @@ def _ensure_schedule_columns():
         "last_status": "VARCHAR",
         "last_error": "TEXT",
         "last_report_path": "VARCHAR",
+        "configs_json": "TEXT",
+        "last_used_config_index": "INTEGER",
+        "last_run_config": "TEXT",
     }
 
     with engine.connect() as conn:
