@@ -151,6 +151,7 @@ def main() -> int:
     lead_service = LeadService()
     export_service = ExportService()
     report_service = ReportService()
+    scheduler_service = SchedulerService()
 
     if args.reset_leads:
         deleted = lead_service.reset_leads(clear_search_history=True)
@@ -188,6 +189,7 @@ def main() -> int:
             )
         )
         report_paths = report_service.save_outreach_report(summary, trigger="cli", schedule_name="one_shot_auto_outreach")
+        scheduler_service.record_external_run(trigger="cli", summary=summary, report_paths=report_paths)
         print_auto_outreach_summary(summary, report_paths)
         return 1 if summary.get("error") else 0
 

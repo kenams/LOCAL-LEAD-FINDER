@@ -99,16 +99,16 @@ class SchedulerService:
 
     def get_auto_schedule_status(self) -> dict[str, Any]:
         """Return scheduler status and next run information for the autonomous job."""
+        self.ensure_auto_schedule()
         db = SessionLocal()
         try:
             schedule = db.query(Schedule).filter(Schedule.name == settings.AUTO_MODE_NAME).first()
-            if not schedule:
-                self.ensure_auto_schedule()
-                schedule = db.query(Schedule).filter(Schedule.name == settings.AUTO_MODE_NAME).first()
+            if schedule and not schedule.last_run:
+                self._backfill_from_latest_report(schedule, db)
             next_run = None
             if schedule:
                 job = self.scheduler.get_job(f"schedule_{schedule.id}") if self.scheduler.running else None
-                next_run = job.next_run_time if job else schedule.next_run
+                next_run = job.next_run_time if job else (schedule.next_run or self._calculate_next_run(schedule.cron_expression))
             return {
                 "enabled": bool(schedule.enabled) if schedule else False,
                 "scheduler_running": self.scheduler.running,
@@ -124,6 +124,27 @@ class SchedulerService:
                 "last_report_path": schedule.last_report_path if schedule else "",
                 "next_run": next_run,
             }
+        finally:
+            db.close()
+
+    def record_external_run(self, *, trigger: str, summary: dict[str, Any], report_paths: dict[str, str]) -> None:
+        """Persist the result of a one-shot external run so the monitor stays accurate."""
+        db = SessionLocal()
+        try:
+            schedule = db.query(Schedule).filter(Schedule.name == settings.AUTO_MODE_NAME).first()
+            if not schedule:
+                self.ensure_auto_schedule()
+                schedule = db.query(Schedule).filter(Schedule.name == settings.AUTO_MODE_NAME).first()
+            if not schedule:
+                return
+
+            schedule.last_run = datetime.utcnow()
+            schedule.last_status = "SUCCESS" if not summary.get("error") else "FAILED"
+            schedule.last_error = summary.get("error", "")
+            schedule.last_report_path = report_paths.get("json_path", "")
+            schedule.next_run = self._calculate_next_run(schedule.cron_expression)
+            db.commit()
+            logger.info(f"Recorded external autonomous outreach run ({trigger})")
         finally:
             db.close()
 
@@ -196,6 +217,36 @@ class SchedulerService:
             db.commit()
         finally:
             db.close()
+
+    def _calculate_next_run(self, cron_expression: str):
+        """Calculate the next run from a cron expression even when APScheduler is not running in-process."""
+        try:
+            trigger = CronTrigger.from_crontab(cron_expression)
+            now = datetime.now(trigger.timezone) if trigger.timezone else datetime.now().astimezone()
+            next_run = trigger.get_next_fire_time(None, now)
+            return next_run.replace(tzinfo=None) if next_run else None
+        except Exception:
+            return None
+
+    def _backfill_from_latest_report(self, schedule: Schedule, db) -> None:
+        """Hydrate schedule status from the latest saved report when runs happened outside the in-process scheduler."""
+        latest_report = next(iter(self.report_service.list_reports(limit=1)), None)
+        if not latest_report:
+            return
+        payload = self.report_service.load_report(latest_report.get("path"))
+        generated_at = payload.get("generated_at") if payload else latest_report.get("generated_at")
+        if generated_at:
+            try:
+                schedule.last_run = datetime.fromisoformat(str(generated_at).replace("Z", "+00:00")).replace(tzinfo=None)
+            except Exception:
+                pass
+        summary = payload.get("summary", {}) if payload else {}
+        schedule.last_status = "FAILED" if summary.get("error") else "SUCCESS"
+        schedule.last_error = summary.get("error", "")
+        schedule.last_report_path = latest_report.get("path")
+        if not schedule.next_run:
+            schedule.next_run = self._calculate_next_run(schedule.cron_expression)
+        db.commit()
 
     async def _run_scheduled_collection(self, schedule_id: int):
         """Run scheduled autonomous outreach."""
