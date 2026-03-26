@@ -30,6 +30,31 @@ from app.ui.ui_theme import badge_html, inject_global_styles, priority_badge_htm
 SEARCH_LOCATIONS = ["Toulouse", "Montpellier", "Marseille", "Paris", "Geneva", "Zurich", "Lausanne", "New York", "Miami", "Dallas", "Los Angeles", "Sydney", "Melbourne", "Brisbane", "London", "Manchester"]
 SEARCH_CATEGORIES = ["coiffeur", "salon de coiffure", "institut de beaute", "spa", "plombier", "electricien", "dentiste", "avocat", "restaurant", "boulangerie", "coach sportif", "garagiste"]
 
+STATUS_LABELS = {
+    "IDLE": "En attente",
+    "RUNNING": "En cours",
+    "SUCCESS": "Succes",
+    "FAILED": "Echec",
+    "SENT": "Envoye",
+    "SKIPPED": "Ignore",
+    "NOT_SENT": "Non envoye",
+    "REPLIED": "A repondu",
+    "INTERESTED": "Interesse",
+    "WON": "Gagne",
+    "LOST": "Perdu",
+    "NO_RESPONSE": "Pas de reponse",
+    "READY": "Pret",
+    "PENDING": "En attente",
+    "NEVER": "Jamais",
+    "LAUNCHED": "Lance",
+    "COMPLETED": "Termine",
+    "ON": "Actif",
+    "OFF": "Inactif",
+}
+
+BOOL_LABELS = {True: "Oui", False: "Non"}
+FILTER_ALL = "Tous"
+
 
 def main():
     st.set_page_config(page_title="KAH-Digital", page_icon="K", layout="wide")
@@ -39,6 +64,17 @@ def main():
     render_brand_header()
     render_automation_center()
     render_manual_debug_mode()
+
+
+def display_status(value: str | None, default: str = "N/A") -> str:
+    if value is None or value == "":
+        return default
+    normalized = str(value).upper()
+    return STATUS_LABELS.get(normalized, str(value))
+
+
+def display_bool(value: bool) -> str:
+    return BOOL_LABELS[bool(value)]
 
 
 def render_automation_center():
@@ -52,36 +88,36 @@ def render_automation_center():
     latest_business = latest_report.get("business_snapshot", {}) if latest_report else {}
     report_status = "READY" if status.get("last_report_path") else "PENDING"
 
-    render_section("Automation", "Autonomous Outreach Monitor", "Monitor the autonomous engine, review recent runs, inspect reports and adjust the schedule.")
+    render_section("Automatisation", "Moniteur d'automatisation", "Surveille le moteur autonome, consulte les derniers runs, les rapports et les reglages du planning.")
     status_cols = st.columns(6)
     with status_cols[0]:
-        render_metric_card("Automation", "ON" if status.get("enabled") else "OFF", "Enabled or disabled")
+        render_metric_card("Automatisation", display_status("ON" if status.get("enabled") else "OFF"), "Etat du mode auto")
     with status_cols[1]:
-        render_metric_card("Schedule", status.get("cron_expression", settings.AUTO_MODE_CRON), "Cron expression")
+        render_metric_card("Planning", status.get("cron_expression", settings.AUTO_MODE_CRON), "Expression cron")
     with status_cols[2]:
-        render_metric_card("Next run", format_datetime_label(status.get("next_run")), "Planned execution")
+        render_metric_card("Prochain run", format_datetime_label(status.get("next_run")), "Execution prevue")
     with status_cols[3]:
-        render_metric_card("Last run", format_datetime_label(status.get("last_run")), "Latest execution")
+        render_metric_card("Dernier run", format_datetime_label(status.get("last_run")), "Derniere execution")
     with status_cols[4]:
-        render_metric_card("Last status", status.get("last_status", "IDLE"), "Execution result")
+        render_metric_card("Dernier statut", display_status(status.get("last_status", "IDLE")), "Resultat du dernier run")
     with status_cols[5]:
-        render_metric_card("Report status", report_status, "Latest report availability")
+        render_metric_card("Statut rapport", display_status(report_status), "Disponibilite du dernier rapport")
 
     catchup_status = get_latest_catchup_status()
-    render_section("Catch-up", "Missed Morning Recovery", "Automatic recovery check that runs 30 minutes after sign-in when no report exists yet for the day.")
+    render_section("Rattrapage", "Recuperation d'un run manque", "Controle automatique lance 30 minutes apres connexion si aucun rapport n'existe encore pour aujourd'hui.")
     catchup_cols = st.columns(4)
     with catchup_cols[0]:
-        render_metric_card("Catch-up mode", "ON", "Active through Windows logon startup")
+        render_metric_card("Mode rattrapage", display_status("ON"), "Actif via le demarrage a la connexion")
     with catchup_cols[1]:
-        render_metric_card("Last check", format_datetime_label(catchup_status.get("last_check")), "Latest delayed login check")
+        render_metric_card("Dernier controle", format_datetime_label(catchup_status.get("last_check")), "Dernier controle differe")
     with catchup_cols[2]:
-        render_metric_card("Last result", catchup_status.get("status", "NEVER"), "Skipped, launched or failed")
+        render_metric_card("Dernier resultat", display_status(catchup_status.get("status", "NEVER")), "Ignore, lance ou termine")
     with catchup_cols[3]:
-        render_metric_card("Reason", catchup_status.get("reason", "No catch-up log yet"), "Why it ran or skipped")
+        render_metric_card("Raison", catchup_status.get("reason", "Aucun log de rattrapage pour le moment"), "Pourquoi il a tourne ou non")
     if catchup_status.get("log_excerpt"):
-        with st.expander("Catch-up log", expanded=False):
+        with st.expander("Log de rattrapage", expanded=False):
             st.text_area(
-                "Catch-up output",
+                "Sortie du rattrapage",
                 value=catchup_status.get("log_excerpt", ""),
                 height=180,
                 key="catchup_log_output",
@@ -89,43 +125,43 @@ def render_automation_center():
                 label_visibility="collapsed",
             )
 
-    render_section("Last Run", "Latest Summary", "Key results from the most recent autonomous outreach run.")
+    render_section("Dernier run", "Resume du dernier run", "Principaux resultats du dernier run autonome.")
     summary_cols = st.columns(8)
     with summary_cols[0]:
-        render_metric_card("Raw found", str(latest_funnel.get("raw_found", latest_summary.get("raw_found", latest_summary.get("leads_found", 0)))), "All raw candidates discovered")
+        render_metric_card("Trouves bruts", str(latest_funnel.get("raw_found", latest_summary.get("raw_found", latest_summary.get("leads_found", 0)))), "Tous les candidats trouves")
     with summary_cols[1]:
-        render_metric_card("Validated", str(latest_funnel.get("validated_leads", latest_summary.get("validated_leads", 0))), "Passed the quality filter")
+        render_metric_card("Valides", str(latest_funnel.get("validated_leads", latest_summary.get("validated_leads", 0))), "Passent le filtre qualite")
     with summary_cols[2]:
-        render_metric_card("Contact ready", str(latest_funnel.get("contact_ready", latest_summary.get("contact_ready", 0))), "Ready for outreach routing")
+        render_metric_card("Contactables", str(latest_funnel.get("contact_ready", latest_summary.get("contact_ready", 0))), "Prets pour l'envoi")
     with summary_cols[3]:
-        render_metric_card("Saved", str(latest_funnel.get("leads_saved", latest_summary.get("leads_saved", 0))), "Persisted prospects")
+        render_metric_card("Sauvegardes", str(latest_funnel.get("leads_saved", latest_summary.get("leads_saved", 0))), "Prospects enregistres")
     with summary_cols[4]:
-        render_metric_card("Emails sent", str(latest_funnel.get("email_sent", latest_summary.get("email_sent", 0))), "Email channel")
+        render_metric_card("Emails envoyes", str(latest_funnel.get("email_sent", latest_summary.get("email_sent", 0))), "Canal email")
     with summary_cols[5]:
-        render_metric_card("Landing sent", str(latest_funnel.get("landing_page_sent", latest_summary.get("landing_page_sent", 0))), "Landing page offers closed")
+        render_metric_card("Landing envoyees", str(latest_funnel.get("landing_page_sent", latest_summary.get("landing_page_sent", 0))), "Offres landing page envoyees")
     with summary_cols[6]:
-        render_metric_card("Website sent", str(latest_funnel.get("website_sent", latest_summary.get("website_sent", 0))), "Showcase website offers closed")
+        render_metric_card("Sites envoyes", str(latest_funnel.get("website_sent", latest_summary.get("website_sent", 0))), "Offres site vitrine envoyees")
     with summary_cols[7]:
-        render_metric_card("Failed", str(latest_funnel.get("failed", latest_summary.get("failed", 0))), "Execution errors")
+        render_metric_card("Echecs", str(latest_funnel.get("failed", latest_summary.get("failed", 0))), "Erreurs d'execution")
 
-    render_section("Lead Quality", "Found -> Kept -> Sent", "Use the quality funnel and rejection reasons to understand why leads were dropped.")
+    render_section("Qualite des leads", "Trouves -> Gardes -> Envoyes", "Utilise l'entonnoir qualite et les raisons de rejet pour comprendre pourquoi des leads sortent du flux.")
     quality_cols = st.columns(8)
     with quality_cols[0]:
-        render_metric_card("Rejected", str(latest_funnel.get("validation_skipped", latest_summary.get("validation_skipped", 0))), "Rejected before outreach")
+        render_metric_card("Rejetes", str(latest_funnel.get("validation_skipped", latest_summary.get("validation_skipped", 0))), "Rejetes avant envoi")
     with quality_cols[1]:
-        render_metric_card("Selected", str(latest_funnel.get("selected", latest_summary.get("selected", 0))), "Queued for delivery this run")
+        render_metric_card("Selectionnes", str(latest_funnel.get("selected", latest_summary.get("selected", 0))), "Mis en file pour ce run")
     with quality_cols[2]:
-        render_metric_card("Skipped", str(latest_funnel.get("skipped", latest_summary.get("skipped", 0))), "No usable channel at send time")
+        render_metric_card("Ignores", str(latest_funnel.get("skipped", latest_summary.get("skipped", 0))), "Aucun canal utilisable")
     with quality_cols[3]:
-        render_metric_card("Send cap", str(settings.SEND_MAX_PER_RUN), "Current max sends per run")
+        render_metric_card("Plafond envoi", str(settings.SEND_MAX_PER_RUN), "Maximum par run")
     with quality_cols[4]:
-        render_metric_card("Min score", str(settings.AUTO_MODE_MIN_OPPORTUNITY_SCORE), "Current opportunity threshold")
+        render_metric_card("Score mini", str(settings.AUTO_MODE_MIN_OPPORTUNITY_SCORE), "Seuil d'opportunite")
     with quality_cols[5]:
-        render_metric_card("Early-stage", str(latest_funnel.get("early_stage_businesses", latest_summary.get("early_stage_businesses", 0))), "Newer or lighter businesses")
+        render_metric_card("Early-stage", str(latest_funnel.get("early_stage_businesses", latest_summary.get("early_stage_businesses", 0))), "Business plus jeunes ou legers")
     with quality_cols[6]:
-        render_metric_card("Landing offers", str(latest_funnel.get("landing_page_offers", latest_summary.get("landing_page_offers", 0))), "Smaller offer angle selected")
+        render_metric_card("Offres landing", str(latest_funnel.get("landing_page_offers", latest_summary.get("landing_page_offers", 0))), "Angle landing page")
     with quality_cols[7]:
-        render_metric_card("High-opportunity", str(latest_funnel.get("high_opportunity_leads", latest_summary.get("high_opportunity_leads", 0))), "Strong conversion candidates")
+        render_metric_card("Fort potentiel", str(latest_funnel.get("high_opportunity_leads", latest_summary.get("high_opportunity_leads", 0))), "Meilleurs candidats conversion")
 
     validation_reasons = latest_report.get("validation_reasons", {}) if latest_report else {}
     if validation_reasons:
@@ -134,42 +170,42 @@ def render_automation_center():
         ).sort_values(by="Count", ascending=False)
         st.dataframe(reasons_df, hide_index=True, use_container_width=True)
     else:
-        st.info("No validation rejections recorded in the latest report.")
+        st.info("Aucun rejet de validation enregistre dans le dernier rapport.")
 
-    render_section("Recent Runs", "Execution History", "A compact history of recent autonomous runs and outcomes.")
+    render_section("Runs recents", "Historique d'execution", "Historique compact des derniers runs autonomes.")
     if report_rows:
         recent_runs_df = pd.DataFrame([
             {
-                "Generated": row.get("generated_at"),
-                "Trigger": row.get("trigger"),
-                "Schedule": row.get("schedule_name"),
-                "Raw": row.get("raw_found", row.get("leads_found", 0)),
-                "Validated": row.get("validated_leads", 0),
-                "Ready": row.get("contact_ready", 0),
-                "Saved": row.get("leads_saved", 0),
+                "Genere": row.get("generated_at"),
+                "Declencheur": row.get("trigger"),
+                "Planning": row.get("schedule_name"),
+                "Brut": row.get("raw_found", row.get("leads_found", 0)),
+                "Valides": row.get("validated_leads", 0),
+                "Prets": row.get("contact_ready", 0),
+                "Sauvegardes": row.get("leads_saved", 0),
                 "Early-stage": row.get("early_stage_businesses", 0),
-                "High-opportunity": row.get("high_opportunity_leads", 0),
-                "Landing offers": row.get("landing_page_offers", 0),
-                "Website offers": row.get("website_offers", 0),
+                "Fort potentiel": row.get("high_opportunity_leads", 0),
+                "Offres landing": row.get("landing_page_offers", 0),
+                "Offres site": row.get("website_offers", 0),
                 "Emails": row.get("email_sent", 0),
-                "Skipped": row.get("skipped", 0),
-                "Failed": row.get("failed", 0),
+                "Ignores": row.get("skipped", 0),
+                "Echecs": row.get("failed", 0),
             }
             for row in report_rows[:10]
         ])
         st.dataframe(recent_runs_df, hide_index=True, use_container_width=True)
     else:
-        st.info("No recent runs available yet.")
+        st.info("Aucun run recent disponible pour le moment.")
 
-    render_section("Reports", "Run Reports", "Open the stored JSON/CSV report payloads from recent autonomous runs.")
+    render_section("Rapports", "Rapports de run", "Ouvre les rapports JSON/CSV enregistres des runs autonomes.")
     if report_rows:
         report_cols = st.columns([1.4, 1, 1])
         with report_cols[0]:
-            selected_report_path = st.selectbox("Report file", [row["path"] for row in report_rows], format_func=lambda path: Path(path).name)
+            selected_report_path = st.selectbox("Fichier rapport", [row["path"] for row in report_rows], format_func=lambda path: Path(path).name)
         with report_cols[1]:
             selected_meta = next((row for row in report_rows if row["path"] == selected_report_path), {})
-            st.caption(f"Trigger: {selected_meta.get('trigger', '')}")
-            st.caption(f"Generated: {selected_meta.get('generated_at', '')}")
+            st.caption(f"Declencheur : {selected_meta.get('trigger', '')}")
+            st.caption(f"Genere : {selected_meta.get('generated_at', '')}")
         with report_cols[2]:
             if selected_report_path:
                 st.caption(selected_report_path)
@@ -179,35 +215,35 @@ def render_automation_center():
             report_funnel = report_payload.get("quality_funnel", {})
             funnel_cols = st.columns(9)
             with funnel_cols[0]:
-                render_metric_card("Raw", str(report_funnel.get("raw_found", report_summary.get("raw_found", report_summary.get("leads_found", 0)))), "Candidates found")
+                render_metric_card("Brut", str(report_funnel.get("raw_found", report_summary.get("raw_found", report_summary.get("leads_found", 0)))), "Candidats trouves")
             with funnel_cols[1]:
-                render_metric_card("Validated", str(report_funnel.get("validated_leads", report_summary.get("validated_leads", 0))), "After quality filter")
+                render_metric_card("Valides", str(report_funnel.get("validated_leads", report_summary.get("validated_leads", 0))), "Apres filtre qualite")
             with funnel_cols[2]:
-                render_metric_card("Ready", str(report_funnel.get("contact_ready", report_summary.get("contact_ready", 0))), "Contactable leads")
+                render_metric_card("Prets", str(report_funnel.get("contact_ready", report_summary.get("contact_ready", 0))), "Leads contactables")
             with funnel_cols[3]:
-                render_metric_card("Saved", str(report_funnel.get("leads_saved", report_summary.get("leads_saved", 0))), "Saved to database")
+                render_metric_card("Sauvegardes", str(report_funnel.get("leads_saved", report_summary.get("leads_saved", 0))), "Enregistres en base")
             with funnel_cols[4]:
-                render_metric_card("Selected", str(report_funnel.get("selected", report_summary.get("selected", 0))), "Queued to send")
+                render_metric_card("Selectionnes", str(report_funnel.get("selected", report_summary.get("selected", 0))), "Mis en file d'envoi")
             with funnel_cols[5]:
-                render_metric_card("Emails sent", str(report_funnel.get("email_sent", report_summary.get("email_sent", 0))), "Delivered this run")
+                render_metric_card("Emails envoyes", str(report_funnel.get("email_sent", report_summary.get("email_sent", 0))), "Envoyes sur ce run")
             with funnel_cols[6]:
-                render_metric_card("Landing sent", str(report_funnel.get("landing_page_sent", report_summary.get("landing_page_sent", 0))), "Landing page offers sent")
+                render_metric_card("Landing envoyees", str(report_funnel.get("landing_page_sent", report_summary.get("landing_page_sent", 0))), "Offres landing envoyees")
             with funnel_cols[7]:
-                render_metric_card("Website sent", str(report_funnel.get("website_sent", report_summary.get("website_sent", 0))), "Showcase website offers sent")
+                render_metric_card("Sites envoyes", str(report_funnel.get("website_sent", report_summary.get("website_sent", 0))), "Offres site vitrine envoyees")
             with funnel_cols[8]:
-                render_metric_card("High-opportunity", str(report_funnel.get("high_opportunity_leads", report_summary.get("high_opportunity_leads", 0))), "Best conversion candidates")
+                render_metric_card("Fort potentiel", str(report_funnel.get("high_opportunity_leads", report_summary.get("high_opportunity_leads", 0))), "Meilleurs candidats")
             offer_cols = st.columns(3)
             with offer_cols[0]:
-                render_metric_card("Early-stage", str(report_funnel.get("early_stage_businesses", report_summary.get("early_stage_businesses", 0))), "Younger-looking businesses")
+                render_metric_card("Early-stage", str(report_funnel.get("early_stage_businesses", report_summary.get("early_stage_businesses", 0))), "Business plus jeunes")
             with offer_cols[1]:
-                render_metric_card("Landing offers", str(report_funnel.get("landing_page_offers", report_summary.get("landing_page_offers", 0))), "Offer type selection")
+                render_metric_card("Offres landing", str(report_funnel.get("landing_page_offers", report_summary.get("landing_page_offers", 0))), "Type d'offre")
             with offer_cols[2]:
-                render_metric_card("Website offers", str(report_funnel.get("website_offers", report_summary.get("website_offers", 0))), "Offer type selection")
+                render_metric_card("Offres site", str(report_funnel.get("website_offers", report_summary.get("website_offers", 0))), "Type d'offre")
             if report_payload.get("validation_reasons"):
                 st.dataframe(
                     pd.DataFrame(
-                        [{"Reason": reason, "Count": count} for reason, count in report_payload.get("validation_reasons", {}).items()]
-                    ).sort_values(by="Count", ascending=False),
+                        [{"Raison": reason, "Nombre": count} for reason, count in report_payload.get("validation_reasons", {}).items()]
+                    ).sort_values(by="Nombre", ascending=False),
                     hide_index=True,
                     use_container_width=True,
                 )
@@ -217,33 +253,33 @@ def render_automation_center():
             if not report_results_df.empty:
                 st.dataframe(report_results_df, use_container_width=True)
     else:
-        st.info("No report saved yet.")
+        st.info("Aucun rapport enregistre pour le moment.")
 
-    render_section("Logs", "Execution Logs", "Tail of the application log for quick troubleshooting.")
+    render_section("Logs", "Logs d'execution", "Fin du log applicatif pour un diagnostic rapide.")
     log_controls = st.columns([1.2, 2.8])
     with log_controls[0]:
-        log_height = st.select_slider("Log height", options=[180, 260, 360, 520, 720], value=260, key="log_height")
+        log_height = st.select_slider("Hauteur du log", options=[180, 260, 360, 520, 720], value=260, key="log_height")
     with log_controls[1]:
-        st.caption("Reduce or expand the log panel depending on how much troubleshooting context you need.")
+        st.caption("Reduis ou agrandis le panneau selon le niveau de detail dont tu as besoin.")
     log_text = read_log_tail()
     if log_text:
-        st.text_area("Log output", value=log_text, height=log_height, key="log_output", disabled=True, label_visibility="collapsed")
+        st.text_area("Sortie du log", value=log_text, height=log_height, key="log_output", disabled=True, label_visibility="collapsed")
     else:
-        st.info("No logs available yet.")
+        st.info("Aucun log disponible pour le moment.")
 
-    render_section("Lead Summary", "Recent Outreach Activity", "Latest contacted prospects and their send outcomes.")
+    render_section("Resume leads", "Activite recente", "Derniers prospects contactes et resultat d'envoi.")
     lead_summary = pd.DataFrame(
         [
             {
                 "Business": prospect.business_name,
-                "Location": prospect.location,
-                "Offer": prospect.selected_offer_type or "",
-                "Channel": prospect.selected_outreach_channel or "",
-                "Outreach Status": prospect.outreach_status or "",
-                "Send Status": prospect.send_status or "",
-                "Response": prospect.response_status or "NO_RESPONSE",
-                "Last Attempt": format_datetime_label(prospect.last_attempt_at),
-                "Error": prospect.last_send_error or "",
+                "Localisation": prospect.location,
+                "Offre": prospect.selected_offer_type or "",
+                "Canal": prospect.selected_outreach_channel or "",
+                "Statut outreach": display_status(prospect.outreach_status, ""),
+                "Statut envoi": display_status(prospect.send_status, ""),
+                "Reponse": display_status(prospect.response_status or "NO_RESPONSE"),
+                "Derniere tentative": format_datetime_label(prospect.last_attempt_at),
+                "Erreur": prospect.last_send_error or "",
             }
             for prospect in get_recent_outreach_prospects(limit=15)
         ]
@@ -251,20 +287,20 @@ def render_automation_center():
     if not lead_summary.empty:
         st.dataframe(lead_summary, hide_index=True, use_container_width=True)
     else:
-        st.info("No recent outreach activity yet.")
+        st.info("Aucune activite recente pour le moment.")
 
-    render_section("Business Tracking", "Replies and Offer Performance", "Monitor which offer angle is generating replies and potential deals.")
+    render_section("Suivi business", "Reponses et performance des offres", "Observe quel angle d'offre genere des reponses et du potentiel commercial.")
     business_cols = st.columns(5)
     with business_cols[0]:
-        render_metric_card("Sent total", str(latest_business.get("sent", 0)), "All sent outreach tracked")
+        render_metric_card("Total envoye", str(latest_business.get("sent", 0)), "Tous les envois suivis")
     with business_cols[1]:
-        render_metric_card("Replies", str(latest_business.get("responses", 0)), "Any reply received")
+        render_metric_card("Reponses", str(latest_business.get("responses", 0)), "Toute reponse recue")
     with business_cols[2]:
-        render_metric_card("Interested", str(latest_business.get("interested", 0)), "Positive buying signal")
+        render_metric_card("Interesses", str(latest_business.get("interested", 0)), "Signal commercial positif")
     with business_cols[3]:
-        render_metric_card("Won", str(latest_business.get("won", 0)), "Closed clients")
+        render_metric_card("Gagnes", str(latest_business.get("won", 0)), "Clients signes")
     with business_cols[4]:
-        render_metric_card("Potential value", str(latest_business.get("potential_deal_value", 0.0)), "Current tracked pipeline")
+        render_metric_card("Valeur potentielle", str(latest_business.get("potential_deal_value", 0.0)), "Pipeline actuel")
 
     by_offer = latest_business.get("by_offer", {}) if latest_business else {}
     if by_offer:
@@ -273,21 +309,21 @@ def render_automation_center():
                 [
                     {
                         "Offer": "Landing page",
-                        "Sent": by_offer.get("landing_page", {}).get("sent", 0),
-                        "Replies": by_offer.get("landing_page", {}).get("responses", 0),
-                        "Interested": by_offer.get("landing_page", {}).get("interested", 0),
-                        "Won": by_offer.get("landing_page", {}).get("won", 0),
-                        "Reply rate %": by_offer.get("landing_page", {}).get("reply_rate", 0.0),
-                        "Potential value": by_offer.get("landing_page", {}).get("potential_deal_value", 0.0),
+                        "Envoyes": by_offer.get("landing_page", {}).get("sent", 0),
+                        "Reponses": by_offer.get("landing_page", {}).get("responses", 0),
+                        "Interesses": by_offer.get("landing_page", {}).get("interested", 0),
+                        "Gagnes": by_offer.get("landing_page", {}).get("won", 0),
+                        "Taux de reponse %": by_offer.get("landing_page", {}).get("reply_rate", 0.0),
+                        "Valeur potentielle": by_offer.get("landing_page", {}).get("potential_deal_value", 0.0),
                     },
                     {
-                        "Offer": "Website",
-                        "Sent": by_offer.get("website", {}).get("sent", 0),
-                        "Replies": by_offer.get("website", {}).get("responses", 0),
-                        "Interested": by_offer.get("website", {}).get("interested", 0),
-                        "Won": by_offer.get("website", {}).get("won", 0),
-                        "Reply rate %": by_offer.get("website", {}).get("reply_rate", 0.0),
-                        "Potential value": by_offer.get("website", {}).get("potential_deal_value", 0.0),
+                        "Offer": "Site vitrine",
+                        "Envoyes": by_offer.get("website", {}).get("sent", 0),
+                        "Reponses": by_offer.get("website", {}).get("responses", 0),
+                        "Interesses": by_offer.get("website", {}).get("interested", 0),
+                        "Gagnes": by_offer.get("website", {}).get("won", 0),
+                        "Taux de reponse %": by_offer.get("website", {}).get("reply_rate", 0.0),
+                        "Valeur potentielle": by_offer.get("website", {}).get("potential_deal_value", 0.0),
                     },
                 ]
             ),
@@ -295,17 +331,17 @@ def render_automation_center():
             use_container_width=True,
         )
 
-    render_section("Warm Leads", "Top Warm Leads", "Direct view of leads that already replied, showed interest or converted.")
+    render_section("Leads chauds", "Top leads chauds", "Vue directe des leads qui ont deja repondu, montre un interet ou converti.")
     warm_leads = pd.DataFrame(
         [
             {
                 "Business": prospect.business_name,
-                "Location": prospect.location,
-                "Offer": prospect.selected_offer_type or "",
-                "Response": prospect.response_status or "NO_RESPONSE",
-                "Lifecycle": prospect.status or "",
-                "Potential value": float(prospect.potential_deal_value or 0.0),
-                "Replied at": format_datetime_label(prospect.replied_at),
+                "Localisation": prospect.location,
+                "Offre": prospect.selected_offer_type or "",
+                "Reponse": display_status(prospect.response_status or "NO_RESPONSE"),
+                "Cycle de vie": prospect.status or "",
+                "Valeur potentielle": float(prospect.potential_deal_value or 0.0),
+                "Repondu le": format_datetime_label(prospect.replied_at),
                 "Email": prospect.email or "",
             }
             for prospect in get_warm_prospects(limit=12)
@@ -314,35 +350,35 @@ def render_automation_center():
     if not warm_leads.empty:
         st.dataframe(warm_leads, hide_index=True, use_container_width=True)
     else:
-        st.info("No warm leads yet. Mark replies from Debug / Manual Mode when they come in.")
+        st.info("Aucun lead chaud pour le moment. Tu peux marquer les reponses depuis le mode debug.")
 
-    render_section("Configuration", "Minimal Automation Config", "Adjust the autonomous schedule, scope and runtime settings from one small panel.")
-    st.caption("Recommended production rhythm: `0 9,18 * * *` with `5` sends per run for a target of `10` sends per day.")
+    render_section("Configuration", "Configuration minimale", "Ajuste le planning autonome, le scope et les reglages d'execution depuis un petit panneau.")
+    st.caption("Rythme prod recommande : `0 9,18 * * *` avec `5` envois par run pour viser `10` envois par jour.")
     config_cols = st.columns([1.2, 1.2, 0.8, 0.8, 1.2])
     with config_cols[0]:
-        auto_locations = st.text_input("Locations", value=status.get("locations", settings.AUTO_MODE_LOCATIONS), key="auto_cfg_locations")
+        auto_locations = st.text_input("Zones", value=status.get("locations", settings.AUTO_MODE_LOCATIONS), key="auto_cfg_locations")
     with config_cols[1]:
         auto_categories = st.text_input("Categories", value=status.get("categories", settings.AUTO_MODE_CATEGORIES), key="auto_cfg_categories")
     with config_cols[2]:
-        auto_limit = st.number_input("Limit", min_value=1, max_value=50, value=int(status.get("limit", settings.AUTO_MODE_LIMIT)), key="auto_cfg_limit")
+        auto_limit = st.number_input("Limite", min_value=1, max_value=50, value=int(status.get("limit", settings.AUTO_MODE_LIMIT)), key="auto_cfg_limit")
     with config_cols[3]:
-        auto_language = st.selectbox("Language", ["fr", "en"], index=0 if status.get("language", "fr") == "fr" else 1, key="auto_cfg_language")
+        auto_language = st.selectbox("Langue", ["fr", "en"], index=0 if status.get("language", "fr") == "fr" else 1, key="auto_cfg_language")
     with config_cols[4]:
         auto_cron = st.text_input("Cron", value=status.get("cron_expression", settings.AUTO_MODE_CRON), key="auto_cfg_cron")
     runtime_cols = st.columns(4)
     with runtime_cols[0]:
-        send_max_per_run = st.number_input("Send cap / run", min_value=1, max_value=50, value=int(settings.SEND_MAX_PER_RUN), key="auto_cfg_send_cap")
+        send_max_per_run = st.number_input("Plafond d'envoi / run", min_value=1, max_value=50, value=int(settings.SEND_MAX_PER_RUN), key="auto_cfg_send_cap")
     with runtime_cols[1]:
-        send_delay_seconds = st.number_input("Delay between sends", min_value=0.0, max_value=30.0, value=float(settings.SEND_DELAY_SECONDS), step=0.5, key="auto_cfg_send_delay")
+        send_delay_seconds = st.number_input("Delai entre envois", min_value=0.0, max_value=30.0, value=float(settings.SEND_DELAY_SECONDS), step=0.5, key="auto_cfg_send_delay")
     with runtime_cols[2]:
-        candidate_multiplier = st.number_input("Search depth", min_value=2, max_value=40, value=int(settings.AUTO_MODE_CONTACT_CANDIDATE_MULTIPLIER), key="auto_cfg_candidate_multiplier")
+        candidate_multiplier = st.number_input("Profondeur de recherche", min_value=2, max_value=40, value=int(settings.AUTO_MODE_CONTACT_CANDIDATE_MULTIPLIER), key="auto_cfg_candidate_multiplier")
     with runtime_cols[3]:
-        min_opportunity_score = st.number_input("Min opportunity score", min_value=0, max_value=100, value=int(settings.AUTO_MODE_MIN_OPPORTUNITY_SCORE), key="auto_cfg_min_score")
+        min_opportunity_score = st.number_input("Score d'opportunite mini", min_value=0, max_value=100, value=int(settings.AUTO_MODE_MIN_OPPORTUNITY_SCORE), key="auto_cfg_min_score")
     config_action_cols = st.columns([1, 2])
     with config_action_cols[0]:
-        auto_enabled = st.checkbox("Auto mode enabled", value=bool(status.get("enabled")), key="auto_cfg_enabled")
+        auto_enabled = st.checkbox("Mode auto actif", value=bool(status.get("enabled")), key="auto_cfg_enabled")
     with config_action_cols[1]:
-        if st.button("Save automation config", use_container_width=True):
+        if st.button("Enregistrer la configuration", use_container_width=True):
             settings.AUTO_MODE_LOCATIONS = auto_locations
             settings.AUTO_MODE_CATEGORIES = auto_categories
             settings.AUTO_MODE_LIMIT = int(auto_limit)
@@ -377,82 +413,82 @@ def render_automation_center():
                     "AUTO_MODE_MIN_OPPORTUNITY_SCORE": int(min_opportunity_score),
                 }
             )
-            st.success("Automation configuration updated.")
+            st.success("Configuration d'automatisation mise a jour.")
             st.rerun()
 
     if status.get("last_error"):
-        st.warning(f"Last error: {status.get('last_error')}")
+        st.warning(f"Derniere erreur : {status.get('last_error')}")
 
 
 def render_manual_debug_mode():
-    with st.expander("Debug / Manual Mode", expanded=False):
-        render_section("Debug", "Manual and Troubleshooting Tools", "Secondary tools for testing, previews, targeted sends and diagnostics.")
+    with st.expander("Debug / Mode manuel", expanded=False):
+        render_section("Debug", "Outils manuels et diagnostic", "Outils secondaires pour les tests, apercus, envois cibles et diagnostics.")
         render_debug_tools()
 
         render_search_section()
-        render_section("Search Diagnostics", "Observability", "Queries, providers and raw candidate counts for the latest collection run.")
+        render_section("Diagnostic recherche", "Observabilite", "Requetes, providers et volumes bruts du dernier run de collecte.")
         render_search_diagnostics()
 
-        render_section("Lead Intelligence", "Manual Review", "Manual inspection tools kept for debugging and exceptional operator workflows.")
+        render_section("Analyse lead", "Revue manuelle", "Outils d'inspection manuelle gardes pour le debug et les cas exceptionnels.")
         prospects, selected_prospects = render_lead_console()
         if not prospects:
-            st.info("No prospects found. Launch a search to start building the pipeline.")
+            st.info("Aucun prospect trouve. Lance une recherche pour alimenter le pipeline.")
             return
 
         export_cols = st.columns(2)
         with export_cols[0]:
-            if st.button("Export CSV", use_container_width=True):
+            if st.button("Exporter CSV", use_container_width=True):
                 ExportService().export_leads("csv")
-                st.success("CSV export created.")
+                st.success("Export CSV cree.")
         with export_cols[1]:
-            if st.button("Export Excel", use_container_width=True):
+            if st.button("Exporter Excel", use_container_width=True):
                 ExportService().export_leads("xlsx")
-                st.success("Excel export created.")
+                st.success("Export Excel cree.")
 
-        render_section("Sender Identity", "KAH.DIGITAL Outreach", "Professional sender identity, signature and mockup quality settings used across emails, follow-ups and exports.")
+        render_section("Identite expediteur", "KAH.DIGITAL Outreach", "Identite expediteur pro, signature et reglage maquette utilises partout.")
         render_sender_identity_preview()
 
-        render_section("Preview", "Manual Preview Examples", "Preview one lead, inspect the generated outreach assets and troubleshoot message quality.")
+        render_section("Apercu", "Exemples d'apercu manuel", "Previsualise un lead, inspecte les contenus generes et controle la qualite du message.")
         preview_pool = selected_prospects or prospects
         prospect = resolve_preview_prospect(preview_pool)
         render_prospect_summary(prospect, f"preview_{prospect.id}")
         notes_data = parse_notes(prospect.notes)
-        lang = st.selectbox("Preview language", ["fr", "en"], index=0 if (prospect.email_language or "fr") == "fr" else 1)
-        preview_assets = ["Primary email", "Short email", "Follow-up J+2", "Follow-up J+5", "Final follow-up J+10"]
+        lang = st.selectbox("Langue d'apercu", ["fr", "en"], index=0 if (prospect.email_language or "fr") == "fr" else 1)
+        preview_assets = ["Email principal", "Email court", "Relance J+2", "Relance J+5", "Relance finale J+10"]
         if not settings.EMAIL_ONLY_OUTREACH:
-            preview_assets.extend(["SMS", "Call script", "Contact form", "Social DM"])
-        outreach_asset = st.selectbox("Outreach asset", preview_assets)
+            preview_assets.extend(["SMS", "Script d'appel", "Formulaire de contact", "DM reseaux sociaux"])
+        outreach_asset = st.selectbox("Contenu a previsualiser", preview_assets)
         subject, body, html_body = build_outreach_preview(prospect, notes_data, lang, outreach_asset)
 
         preview_cols = st.columns([1, 1.2])
         with preview_cols[0]:
-            render_key_value_card("Example Context", [
-                ("Language", prospect.email_language or "N/A"),
-                ("Price", format_price_range(prospect.estimated_price_min, prospect.estimated_price_max, prospect.country)),
-                ("Recommended channel", notes_data.get("recommended_channel", "N/A")),
-                ("Selected offer", prospect.selected_offer_type or "N/A"),
-                ("Selected outreach", prospect.selected_outreach_channel or "N/A"),
-                ("Outreach status", prospect.outreach_status or "N/A"),
-                ("Response status", prospect.response_status or "NO_RESPONSE"),
-                ("Potential deal", str(prospect.potential_deal_value or 0.0)),
-                ("Recipient", prospect.email or prospect.phone or "Unavailable"),
-                ("Send status", get_send_indicator(prospect.send_status)),
-                ("Last error", prospect.last_send_error or "None"),
+            render_key_value_card("Contexte de l'exemple", [
+                ("Langue", prospect.email_language or "N/A"),
+                ("Prix", format_price_range(prospect.estimated_price_min, prospect.estimated_price_max, prospect.country)),
+                ("Canal recommande", notes_data.get("recommended_channel", "N/A")),
+                ("Offre selectionnee", prospect.selected_offer_type or "N/A"),
+                ("Outreach selectionnee", prospect.selected_outreach_channel or "N/A"),
+                ("Statut outreach", display_status(prospect.outreach_status, "N/A")),
+                ("Statut reponse", display_status(prospect.response_status or "NO_RESPONSE")),
+                ("Deal potentiel", str(prospect.potential_deal_value or 0.0)),
+                ("Destinataire", prospect.email or prospect.phone or "Indisponible"),
+                ("Statut envoi", display_status(get_send_indicator(prospect.send_status))),
+                ("Derniere erreur", prospect.last_send_error or "Aucune"),
             ])
         with preview_cols[1]:
-            st.text_input("Subject", value=subject, key=f"subject_{prospect.id}")
+            st.text_input("Sujet", value=subject, key=f"subject_{prospect.id}")
             st.text_area("Message", value=body, height=260, key=f"body_{prospect.id}")
             if html_body:
-                with st.expander("HTML preview", expanded=False):
+                with st.expander("Apercu HTML", expanded=False):
                     components.html(html_body, height=520, scrolling=True)
         render_alternative_outreach_panel(prospect, notes_data)
 
-        render_section("Manual Send", "Targeted Send Controls", "Manual send actions are still available here for isolated testing and support.")
+        render_section("Envoi manuel", "Controles d'envoi cible", "Les actions d'envoi manuel restent disponibles ici pour les tests isoles.")
         render_send_panel(prospects, selected_prospects, prospect, subject, body, html_body)
 
         if st.session_state.get("last_send_summary"):
             summary = st.session_state["last_send_summary"]
-            st.caption(f"Last manual send: selected={summary.get('selected', 0)} | sent={summary.get('sent', 0)} | failed={summary.get('failed', 0)} | skipped={summary.get('skipped', 0)} | simulated={summary.get('simulated', 0)}")
+            st.caption(f"Dernier envoi manuel : selectionnes={summary.get('selected', 0)} | envoyes={summary.get('sent', 0)} | echecs={summary.get('failed', 0)} | ignores={summary.get('skipped', 0)} | simulation={summary.get('simulated', 0)}")
             results_df = pd.DataFrame(summary.get("results", []))
             if not results_df.empty:
                 st.dataframe(results_df, use_container_width=True)
@@ -464,28 +500,28 @@ def render_debug_tools():
     lead_service = LeadService()
     debug_cols = st.columns([1, 1, 1.2])
     with debug_cols[0]:
-        debug_run_dry = st.checkbox("Dry run manual trigger", value=True, key="debug_run_dry")
+        debug_run_dry = st.checkbox("Declenchement manuel en simulation", value=True, key="debug_run_dry")
     with debug_cols[1]:
-        test_to_self = st.checkbox("Test send to self", value=True, key="debug_test_to_self")
+        test_to_self = st.checkbox("Test d'envoi vers moi", value=True, key="debug_test_to_self")
     with debug_cols[2]:
-        st.caption("Use these tools for one-off checks only. The autonomous scheduler remains the primary flow.")
+        st.caption("Utilise ces outils pour des verifications ponctuelles. Le mode autonome reste le flux principal.")
 
     button_cols = st.columns(2)
     with button_cols[0]:
-        if st.button("Run auto flow now", use_container_width=True):
+        if st.button("Lancer le flux auto maintenant", use_container_width=True):
             summary = scheduler_service.run_auto_outreach_now(simulate=debug_run_dry)
             st.session_state["last_auto_outreach_summary"] = summary
             st.success(
-                f"Manual auto run complete. leads_found={summary.get('leads_found', 0)} "
+                f"Run manuel termine. leads_found={summary.get('leads_found', 0)} "
                 f"email_sent={summary.get('email_sent', 0)} landing_sent={summary.get('landing_page_sent', 0)} "
                 f"website_sent={summary.get('website_sent', 0)} "
                 f"skipped={summary.get('skipped', 0)} failed={summary.get('failed', 0)}"
             )
     with button_cols[1]:
-        if st.button("Send one test email to self", use_container_width=True):
+        if st.button("M'envoyer un email test", use_container_width=True):
             prospects = get_prospects(has_email=True, send_status=None)
             if not prospects:
-                st.warning("No lead with email is available for a self-test.")
+                st.warning("Aucun lead avec email n'est disponible pour un auto-test.")
             else:
                 summary = lead_service.send_emails(
                     selected_ids=[prospects[0].id],
@@ -497,18 +533,18 @@ def render_debug_tools():
                 )
                 st.session_state["last_send_summary"] = summary
                 st.success(
-                    f"Test send complete. sent={summary.get('sent', 0)} failed={summary.get('failed', 0)} "
+                    f"Envoi test termine. sent={summary.get('sent', 0)} failed={summary.get('failed', 0)} "
                     f"skipped={summary.get('skipped', 0)} simulated={summary.get('simulated', 0)}"
                 )
 
-    render_key_value_card("Troubleshooting", [
-        ("Scheduler running", "Yes" if status.get("scheduler_running") else "No"),
-        ("Automation enabled", "Yes" if status.get("enabled") else "No"),
-        ("Next run", format_datetime_label(status.get("next_run"))),
-        ("Last status", status.get("last_status", "IDLE")),
-        ("Email-only outreach", "Yes" if settings.EMAIL_ONLY_OUTREACH else "No"),
-        ("SMTP host", settings.SMTP_HOST or "Missing"),
-        ("Send cap / run", str(settings.SEND_MAX_PER_RUN)),
+    render_key_value_card("Diagnostic", [
+        ("Scheduler actif", display_bool(status.get("scheduler_running"))),
+        ("Automatisation active", display_bool(status.get("enabled"))),
+        ("Prochain run", format_datetime_label(status.get("next_run"))),
+        ("Dernier statut", display_status(status.get("last_status", "IDLE"))),
+        ("Email-only outreach", display_bool(settings.EMAIL_ONLY_OUTREACH)),
+        ("SMTP host", settings.SMTP_HOST or "Manquant"),
+        ("Plafond d'envoi / run", str(settings.SEND_MAX_PER_RUN)),
     ])
     for warning in settings.get_smtp_identity_warnings():
         st.warning(warning)
@@ -833,8 +869,8 @@ def execute_and_rerender(action_name, selected_ids, limit, only_not_sent, test_t
 
 def render_sidebar():
     render_sidebar_brand()
-    st.sidebar.markdown(f"""<div class="kah-card"><div class="kah-section-label">Status System</div><div class="kah-inline-badges">{status_badge_html("deployed")}{status_badge_html("pending")}{status_badge_html("failed")}</div><div class="kah-inline-badges" style="margin-top:0.7rem;">{priority_badge_html(125)}{priority_badge_html(90)}{priority_badge_html(45)}</div></div>""", unsafe_allow_html=True)
-    st.sidebar.markdown("""<div class="kah-card"><div class="kah-section-label">Brand Notes</div><div style="color:var(--kah-muted); font-size:0.9rem; line-height:1.65;">Black and gold visual system inspired by KAH.DIGITAL and KAH-PROD. Built to feel like a premium digital studio control panel rather than a generic admin dashboard.</div></div>""", unsafe_allow_html=True)
+    st.sidebar.markdown(f"""<div class="kah-card"><div class="kah-section-label">Systeme de statut</div><div class="kah-inline-badges">{status_badge_html("deployed")}{status_badge_html("pending")}{status_badge_html("failed")}</div><div class="kah-inline-badges" style="margin-top:0.7rem;">{priority_badge_html(125)}{priority_badge_html(90)}{priority_badge_html(45)}</div></div>""", unsafe_allow_html=True)
+    st.sidebar.markdown("""<div class="kah-card"><div class="kah-section-label">Notes de marque</div><div style="color:var(--kah-muted); font-size:0.9rem; line-height:1.65;">Systeme visuel noir et or inspire de KAH.DIGITAL et KAH-PROD. L'interface doit ressembler a un poste de pilotage premium de studio digital, pas a un back-office generique.</div></div>""", unsafe_allow_html=True)
 
 
 def render_prospect_summary(prospect, key_prefix: str):
@@ -985,51 +1021,51 @@ def build_outreach_preview(prospect, notes_data: dict, lang: str, outreach_asset
         body = normalize_sender_content(prospect.email_body_fr or "Corps non genere", settings.PROFESSIONAL_EMAIL)
         html_body = normalize_sender_content(prospect.email_html_fr or "", settings.PROFESSIONAL_EMAIL)
     else:
-        subject = prospect.email_subject_en or "Subject not generated"
-        body = normalize_sender_content(prospect.email_body_en or "Body not generated", settings.PROFESSIONAL_EMAIL)
+        subject = prospect.email_subject_en or "Sujet non genere"
+        body = normalize_sender_content(prospect.email_body_en or "Corps non genere", settings.PROFESSIONAL_EMAIL)
         html_body = normalize_sender_content(prospect.email_html_en or "", settings.PROFESSIONAL_EMAIL)
-    if outreach_asset == "Short email":
+    if outreach_asset == "Email court":
         prefix = "fr" if lang == "fr" else "en"
         subject = notes_data.get(f"email_short_subject_{prefix}", subject)
         body = notes_data.get(f"email_short_{prefix}", body)
         html_body = ""
-    elif outreach_asset == "Follow-up J+2":
+    elif outreach_asset == "Relance J+2":
         follow_up = notes_data.get("follow_ups_fr", {}) if lang == "fr" else notes_data.get("follow_ups_en", {})
         subject = follow_up.get("day_2", {}).get("subject", subject)
         body = follow_up.get("day_2", {}).get("body", body)
         html_body = ""
-    elif outreach_asset == "Follow-up J+5":
+    elif outreach_asset == "Relance J+5":
         follow_up = notes_data.get("follow_ups_fr", {}) if lang == "fr" else notes_data.get("follow_ups_en", {})
         subject = follow_up.get("day_5", {}).get("subject", subject)
         body = follow_up.get("day_5", {}).get("body", body)
         html_body = ""
-    elif outreach_asset == "Final follow-up J+10":
+    elif outreach_asset == "Relance finale J+10":
         follow_up = notes_data.get("follow_ups_fr", {}) if lang == "fr" else notes_data.get("follow_ups_en", {})
         subject = follow_up.get("day_10", {}).get("subject", subject)
         body = follow_up.get("day_10", {}).get("body", body)
         html_body = ""
     elif outreach_asset == "SMS":
         subject = "SMS"
-        body = notes_data.get("sms_message", notes_data.get("sms", "SMS not generated"))
+        body = notes_data.get("sms_message", notes_data.get("sms", "SMS non genere"))
         html_body = ""
-    elif outreach_asset == "Call script":
-        subject = "Call script"
-        body = notes_data.get("call_script", "Call script not generated")
+    elif outreach_asset == "Script d'appel":
+        subject = "Script d'appel"
+        body = notes_data.get("call_script", "Script d'appel non genere")
         html_body = ""
-    elif outreach_asset == "Contact form":
-        subject = "Contact form"
-        body = notes_data.get("contact_form_message", "Contact form message not generated")
+    elif outreach_asset == "Formulaire de contact":
+        subject = "Formulaire de contact"
+        body = notes_data.get("contact_form_message", "Message formulaire non genere")
         html_body = ""
-    elif outreach_asset == "Social DM":
+    elif outreach_asset == "DM reseaux sociaux":
         subject = notes_data.get("preferred_social_channel", "social") or "social"
-        body = notes_data.get("social_dm_message", "Social DM not generated")
+        body = notes_data.get("social_dm_message", "DM reseaux sociaux non genere")
         html_body = ""
     return subject, body, html_body
 
 
 def format_datetime_label(value) -> str:
     if not value:
-        return "Never"
+        return "Jamais"
     if isinstance(value, (int, float)):
         return pd.to_datetime(value, unit="s").strftime("%Y-%m-%d %H:%M")
     if hasattr(value, "strftime"):
@@ -1037,9 +1073,9 @@ def format_datetime_label(value) -> str:
     return str(value)
 
 
-def render_copy_text_button(text: str, key: str, label: str = "Copy Email"):
+def render_copy_text_button(text: str, key: str, label: str = "Copier l'email"):
     safe_key = key.replace(" ", "_")
-    components.html(f"""<button id="{safe_key}" style="width:100%;padding:0.72rem 0.9rem;border:1px solid rgba(201,168,106,0.34);border-radius:14px;background:linear-gradient(180deg, rgba(17,19,23,0.98), rgba(10,11,14,0.98));color:#F5EFE3;font-weight:700;letter-spacing:0.05em;cursor:pointer;">{label}</button><div id="{safe_key}_status" style="font-size:12px;color:#9C968A;margin-top:0.35rem;"></div><script>const button=document.getElementById("{safe_key}");const status=document.getElementById("{safe_key}_status");button.addEventListener("click",async()=>{{try{{await navigator.clipboard.writeText({json.dumps(text)});status.textContent="Copied";}}catch(error){{status.textContent="Copy unavailable here.";}}}});</script>""", height=74)
+    components.html(f"""<button id="{safe_key}" style="width:100%;padding:0.72rem 0.9rem;border:1px solid rgba(201,168,106,0.34);border-radius:14px;background:linear-gradient(180deg, rgba(17,19,23,0.98), rgba(10,11,14,0.98));color:#F5EFE3;font-weight:700;letter-spacing:0.05em;cursor:pointer;">{label}</button><div id="{safe_key}_status" style="font-size:12px;color:#9C968A;margin-top:0.35rem;"></div><script>const button=document.getElementById("{safe_key}");const status=document.getElementById("{safe_key}_status");button.addEventListener("click",async()=>{{try{{await navigator.clipboard.writeText({json.dumps(text)});status.textContent="Copie";}}catch(error){{status.textContent="Copie indisponible ici.";}}}});</script>""", height=74)
 
 
 def execute_ui_send_action(action_name: str, *, selected_ids: list[int], limit: int, only_not_sent: bool, test_to: str | None, simulate: bool, allow_resend: bool) -> dict:
