@@ -375,13 +375,13 @@ def render_sidebar_brand():
         <div class="kah-card" style="margin-top:0.6rem;">
             <div class="kah-overline">KAH-Digital</div>
             <div style="font-family:'Cormorant Garamond', Georgia, serif; font-size:1.65rem; color:{PALETTE["text"]}; line-height:1;">
-                Control Center
+                Centre de pilotage
             </div>
             <div style="color:{PALETTE["muted"]}; margin-top:0.55rem; font-size:0.92rem;">
-                Premium internal studio dashboard for lead generation, mockups and outreach.
+                Tableau de bord premium pour la generation de leads, les maquettes et l'outreach.
             </div>
             <div style="color:{PALETTE["accent"]}; margin-top:0.7rem; font-size:0.78rem; letter-spacing:0.08em; text-transform:uppercase; font-weight:700;">
-                Built by Kah-Digital
+                Concu par Kah-Digital
             </div>
         </div>
         """,
@@ -451,10 +451,10 @@ def priority_badge_html(priority_score: float | int | None) -> str:
     """Return a styled badge for priority score."""
     score = float(priority_score or 0)
     if score >= 110:
-        return badge_html("High Priority", "success")
+        return badge_html("Priorite haute", "success")
     if score >= 80:
-        return badge_html("Medium Priority", "warning")
-    return badge_html("Low Priority", "neutral")
+        return badge_html("Priorite moyenne", "warning")
+    return badge_html("Priorite basse", "neutral")
 
 
 def status_badge_html(status: str | None) -> str:
@@ -472,7 +472,19 @@ def status_badge_html(status: str | None) -> str:
         "medium priority": "warning",
         "low priority": "neutral",
     }.get(normalized, "neutral")
-    return badge_html(normalized, tone)
+    label = {
+        "deployed": "deployee",
+        "pending": "en attente",
+        "failed": "echec",
+        "sent": "envoye",
+        "not_sent": "non envoye",
+        "skipped": "ignore",
+        "contacted": "contacte",
+        "high priority": "priorite haute",
+        "medium priority": "priorite moyenne",
+        "low priority": "priorite basse",
+    }.get(normalized, normalized)
+    return badge_html(label, tone)
 
 
 def style_prospect_dataframe(dataframe: pd.DataFrame) -> pd.io.formats.style.Styler:
@@ -551,7 +563,7 @@ def _send_style(value):
 def _hero_html() -> str:
     return f"""
     <div class="kah-hero">
-        <div class="kah-overline">Built by Kah-Digital</div>
+        <div class="kah-overline">Concu par Kah-Digital</div>
         <h1 class="kah-brand-title">{settings.BRAND_NAME}</h1>
         <div class="kah-subtitle">{settings.BRAND_SUBTITLE}</div>
     </div>

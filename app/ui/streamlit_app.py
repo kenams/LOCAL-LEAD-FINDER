@@ -50,10 +50,28 @@ STATUS_LABELS = {
     "COMPLETED": "Termine",
     "ON": "Actif",
     "OFF": "Inactif",
+    "UNKNOWN": "Inconnu",
 }
 
 BOOL_LABELS = {True: "Oui", False: "Non"}
 FILTER_ALL = "Tous"
+CHANNEL_LABELS = {
+    "email": "Email",
+    "phone": "Telephone",
+    "contact_form": "Formulaire de contact",
+    "instagram": "Instagram",
+    "facebook": "Facebook",
+    "unavailable": "Indisponible",
+}
+OFFER_LABELS = {
+    "landing_page": "Landing page",
+    "website": "Site vitrine",
+}
+MOCKUP_LABELS = {
+    "deployed": "Deployee",
+    "pending": "En attente",
+    "failed": "Echec",
+}
 
 
 def main():
@@ -75,6 +93,24 @@ def display_status(value: str | None, default: str = "N/A") -> str:
 
 def display_bool(value: bool) -> str:
     return BOOL_LABELS[bool(value)]
+
+
+def display_channel(value: str | None, default: str = "N/A") -> str:
+    if value is None or value == "":
+        return default
+    return CHANNEL_LABELS.get(str(value).lower(), str(value))
+
+
+def display_offer(value: str | None, default: str = "N/A") -> str:
+    if value is None or value == "":
+        return default
+    return OFFER_LABELS.get(str(value).lower(), str(value))
+
+
+def display_mockup_status(value: str | None, default: str = "N/A") -> str:
+    if value is None or value == "":
+        return default
+    return MOCKUP_LABELS.get(str(value).lower(), str(value))
 
 
 def render_automation_center():
@@ -157,7 +193,7 @@ def render_automation_center():
     with quality_cols[4]:
         render_metric_card("Score mini", str(settings.AUTO_MODE_MIN_OPPORTUNITY_SCORE), "Seuil d'opportunite")
     with quality_cols[5]:
-        render_metric_card("Early-stage", str(latest_funnel.get("early_stage_businesses", latest_summary.get("early_stage_businesses", 0))), "Business plus jeunes ou legers")
+        render_metric_card("Debut d'activite", str(latest_funnel.get("early_stage_businesses", latest_summary.get("early_stage_businesses", 0))), "Business plus jeunes ou legers")
     with quality_cols[6]:
         render_metric_card("Offres landing", str(latest_funnel.get("landing_page_offers", latest_summary.get("landing_page_offers", 0))), "Angle landing page")
     with quality_cols[7]:
@@ -183,7 +219,7 @@ def render_automation_center():
                 "Valides": row.get("validated_leads", 0),
                 "Prets": row.get("contact_ready", 0),
                 "Sauvegardes": row.get("leads_saved", 0),
-                "Early-stage": row.get("early_stage_businesses", 0),
+                "Debut d'activite": row.get("early_stage_businesses", 0),
                 "Fort potentiel": row.get("high_opportunity_leads", 0),
                 "Offres landing": row.get("landing_page_offers", 0),
                 "Offres site": row.get("website_offers", 0),
@@ -234,7 +270,7 @@ def render_automation_center():
                 render_metric_card("Fort potentiel", str(report_funnel.get("high_opportunity_leads", report_summary.get("high_opportunity_leads", 0))), "Meilleurs candidats")
             offer_cols = st.columns(3)
             with offer_cols[0]:
-                render_metric_card("Early-stage", str(report_funnel.get("early_stage_businesses", report_summary.get("early_stage_businesses", 0))), "Business plus jeunes")
+                render_metric_card("Debut d'activite", str(report_funnel.get("early_stage_businesses", report_summary.get("early_stage_businesses", 0))), "Business plus jeunes")
             with offer_cols[1]:
                 render_metric_card("Offres landing", str(report_funnel.get("landing_page_offers", report_summary.get("landing_page_offers", 0))), "Type d'offre")
             with offer_cols[2]:
@@ -271,7 +307,7 @@ def render_automation_center():
     lead_summary = pd.DataFrame(
         [
             {
-                "Business": prospect.business_name,
+                "Entreprise": prospect.business_name,
                 "Localisation": prospect.location,
                 "Offre": prospect.selected_offer_type or "",
                 "Canal": prospect.selected_outreach_channel or "",
@@ -335,7 +371,7 @@ def render_automation_center():
     warm_leads = pd.DataFrame(
         [
             {
-                "Business": prospect.business_name,
+                "Entreprise": prospect.business_name,
                 "Localisation": prospect.location,
                 "Offre": prospect.selected_offer_type or "",
                 "Reponse": display_status(prospect.response_status or "NO_RESPONSE"),
@@ -542,7 +578,7 @@ def render_debug_tools():
         ("Automatisation active", display_bool(status.get("enabled"))),
         ("Prochain run", format_datetime_label(status.get("next_run"))),
         ("Dernier statut", display_status(status.get("last_status", "IDLE"))),
-        ("Email-only outreach", display_bool(settings.EMAIL_ONLY_OUTREACH)),
+        ("Mode email-only", display_bool(settings.EMAIL_ONLY_OUTREACH)),
         ("SMTP host", settings.SMTP_HOST or "Manquant"),
         ("Plafond d'envoi / run", str(settings.SEND_MAX_PER_RUN)),
     ])
@@ -551,34 +587,34 @@ def render_debug_tools():
 
 
 def render_search_section():
-    render_section("Search Studio", "Lead Collection", "Launch multi-market searches across countries while keeping the existing business pipeline intact.")
+    render_section("Recherche", "Collecte de leads", "Lance des recherches multi-marches tout en gardant le pipeline existant intact.")
     search_col1, search_col2 = st.columns([1.25, 1])
     with search_col1:
-        locations = st.multiselect("Locations", SEARCH_LOCATIONS, default=["Toulouse", "Geneva", "New York"])
+        locations = st.multiselect("Zones", SEARCH_LOCATIONS, default=["Toulouse", "Geneva", "New York"])
         categories = st.multiselect("Categories", SEARCH_CATEGORIES, default=["coiffeur"])
     with search_col2:
-        limit = st.number_input("Prospects per location", min_value=1, max_value=50, value=10)
-        language = st.selectbox("Fallback language", ["fr", "en"], index=0)
-        with st.expander("Search depth", expanded=False):
-            queries_per_combo = st.slider("Queries per location/category", 3, 20, settings.SEARCH_QUERIES_PER_COMBO)
-            max_raw_candidates = st.slider("Max raw candidates", 10, 60, settings.SEARCH_MAX_RAW_CANDIDATES, step=2)
-            fallback_enabled = st.checkbox("Enable provider fallback", value=settings.SEARCH_FALLBACK_ENABLED)
-            broaden_if_empty = st.checkbox("Broaden search if empty", value=settings.SEARCH_BROADEN_IF_EMPTY)
-            reset_before_collect = st.checkbox("Clear previous leads before collection", value=settings.SEARCH_RESET_BEFORE_COLLECT)
+        limit = st.number_input("Prospects par zone", min_value=1, max_value=50, value=10)
+        language = st.selectbox("Langue de repli", ["fr", "en"], index=0)
+        with st.expander("Profondeur de recherche", expanded=False):
+            queries_per_combo = st.slider("Requetes par couple zone/categorie", 3, 20, settings.SEARCH_QUERIES_PER_COMBO)
+            max_raw_candidates = st.slider("Maximum de candidats bruts", 10, 60, settings.SEARCH_MAX_RAW_CANDIDATES, step=2)
+            fallback_enabled = st.checkbox("Activer le fallback provider", value=settings.SEARCH_FALLBACK_ENABLED)
+            broaden_if_empty = st.checkbox("Elargir la recherche si vide", value=settings.SEARCH_BROADEN_IF_EMPTY)
+            reset_before_collect = st.checkbox("Vider les anciens leads avant collecte", value=settings.SEARCH_RESET_BEFORE_COLLECT)
     action_col1, action_col2, action_col3, _ = st.columns([1, 1, 1.2, 1.4])
     with action_col1:
-        collect_clicked = st.button("Collect Leads", type="primary", use_container_width=True)
+        collect_clicked = st.button("Collecter les leads", type="primary", use_container_width=True)
     with action_col2:
-        st.button("Generate", disabled=True, use_container_width=True)
+        st.button("Generer", disabled=True, use_container_width=True)
     with action_col3:
-        reset_clicked = st.button("Reset leads / Clear database", use_container_width=True)
+        reset_clicked = st.button("Reinitialiser les leads / Vider la base", use_container_width=True)
     if reset_clicked:
         deleted = LeadService().reset_leads(clear_search_history=True)
-        st.success(f"Database cleared. {deleted} leads deleted.")
+        st.success(f"Base videe. {deleted} leads supprimes.")
         st.rerun()
     if collect_clicked:
         if not (locations and categories):
-            st.error("Select at least one location and one category.")
+            st.error("Selectionne au moins une zone et une categorie.")
             return
         settings.SEARCH_QUERIES_PER_COMBO = queries_per_combo
         settings.SEARCH_MAX_RAW_CANDIDATES = max_raw_candidates
@@ -588,45 +624,45 @@ def render_search_section():
         if reset_before_collect:
             LeadService().reset_leads(clear_search_history=True)
         saved_count = asyncio.run(LeadService().collect_leads(locations, categories, limit, language))
-        st.success(f"Collection complete. {saved_count} new leads saved.")
+        st.success(f"Collecte terminee. {saved_count} nouveaux leads sauvegardes.")
         st.rerun()
 
 
 def render_lead_console():
     cols = st.columns(6)
     with cols[0]:
-        filter_country = st.selectbox("Country", ["All"] + sorted(set(get_countries())))
+        filter_country = st.selectbox("Pays", [FILTER_ALL] + sorted(set(get_countries())))
     with cols[1]:
-        filter_location = st.selectbox("Location", ["All"] + sorted(set(get_locations())))
+        filter_location = st.selectbox("Zone", [FILTER_ALL] + sorted(set(get_locations())))
     with cols[2]:
-        filter_category = st.selectbox("Category", ["All"] + sorted(set(get_categories())))
+        filter_category = st.selectbox("Categorie", [FILTER_ALL] + sorted(set(get_categories())))
     with cols[3]:
-        filter_status = st.selectbox("Lifecycle", ["All", "NEW", "REVIEWED", "MAQUETTE_READY", "CONTACTED", "WON", "LOST"])
+        filter_status = st.selectbox("Cycle de vie", [FILTER_ALL, "NEW", "REVIEWED", "MAQUETTE_READY", "CONTACTED", "WON", "LOST"], format_func=lambda x: FILTER_ALL if x == FILTER_ALL else display_status(x))
     with cols[4]:
-        filter_email = st.selectbox("Has email", ["All", "Yes", "No"])
+        filter_email = st.selectbox("Email disponible", [FILTER_ALL, "Oui", "Non"])
     with cols[5]:
-        filter_send_status = st.selectbox("Send status", ["All", "NOT_SENT", "FAILED", "SKIPPED", "SENT"])
+        filter_send_status = st.selectbox("Statut d'envoi", [FILTER_ALL, "NOT_SENT", "FAILED", "SKIPPED", "SENT"], format_func=lambda x: FILTER_ALL if x == FILTER_ALL else display_status(x))
     extra_cols = st.columns(4)
     with extra_cols[0]:
-        filter_only_not_sent = st.checkbox("NOT_SENT only", value=False)
+        filter_only_not_sent = st.checkbox("Seulement NON ENVOYE", value=False)
     with extra_cols[1]:
-        filter_min_priority = st.slider("Minimum priority", 0, 200, 0)
+        filter_min_priority = st.slider("Priorite minimale", 0, 200, 0)
     with extra_cols[2]:
-        filter_phone_available = st.checkbox("Phone available", value=False)
+        filter_phone_available = st.checkbox("Telephone disponible", value=False)
     with extra_cols[3]:
-        filter_contact_form_available = st.checkbox("Contact form available", value=False)
+        filter_contact_form_available = st.checkbox("Formulaire disponible", value=False)
     channel_cols = st.columns(2)
     with channel_cols[0]:
-        filter_social_available = st.checkbox("Social available", value=False)
+        filter_social_available = st.checkbox("Reseaux sociaux disponibles", value=False)
     with channel_cols[1]:
-        filter_recommended_channel = st.selectbox("Recommended channel", ["All", "email", "phone", "contact_form", "instagram", "facebook", "unavailable"])
+        filter_recommended_channel = st.selectbox("Canal recommande", [FILTER_ALL, "email", "phone", "contact_form", "instagram", "facebook", "unavailable"], format_func=lambda x: FILTER_ALL if x == FILTER_ALL else display_channel(x))
     prospects = get_prospects(
-        country=filter_country if filter_country != "All" else None,
-        location=filter_location if filter_location != "All" else None,
-        category=filter_category if filter_category != "All" else None,
-        status=filter_status if filter_status != "All" else None,
-        has_email=(filter_email == "Yes") if filter_email != "All" else None,
-        send_status="NOT_SENT" if filter_only_not_sent else (filter_send_status if filter_send_status != "All" else None),
+        country=filter_country if filter_country != FILTER_ALL else None,
+        location=filter_location if filter_location != FILTER_ALL else None,
+        category=filter_category if filter_category != FILTER_ALL else None,
+        status=filter_status if filter_status != FILTER_ALL else None,
+        has_email=(filter_email == "Oui") if filter_email != FILTER_ALL else None,
+        send_status="NOT_SENT" if filter_only_not_sent else (filter_send_status if filter_send_status != FILTER_ALL else None),
         min_priority=filter_min_priority if filter_min_priority > 0 else None,
     )
     prospects = apply_channel_filters(
@@ -634,79 +670,79 @@ def render_lead_console():
         phone_available=filter_phone_available,
         contact_form_available=filter_contact_form_available,
         social_available=filter_social_available,
-        recommended_channel=filter_recommended_channel if filter_recommended_channel != "All" else None,
+        recommended_channel=filter_recommended_channel if filter_recommended_channel != FILTER_ALL else None,
     )
     if not prospects:
         return [], []
     select_cols = st.columns(2)
     with select_cols[0]:
-        if st.button("Select valid email leads", use_container_width=True):
+        if st.button("Selectionner les leads avec email", use_container_width=True):
             st.session_state["selected_lead_ids"] = [prospect.id for prospect in prospects if prospect.email]
             st.rerun()
     with select_cols[1]:
-        if st.button("Clear selected leads", use_container_width=True):
+        if st.button("Vider la selection", use_container_width=True):
             st.session_state["selected_lead_ids"] = []
             st.rerun()
     selected_ids = set(st.session_state.get("selected_lead_ids", []))
     table = pd.DataFrame([{
-        "Select": prospect.id in selected_ids,
-        "Business": prospect.business_name,
-        "Country": prospect.country,
-        "Location": prospect.location,
-        "Category": prospect.category,
-        "Priority": prospect.priority_score or 0,
+        "Selectionner": prospect.id in selected_ids,
+        "Entreprise": prospect.business_name,
+        "Pays": prospect.country,
+        "Zone": prospect.location,
+        "Categorie": prospect.category,
+        "Priorite": prospect.priority_score or 0,
         "Email": prospect.email or "",
-        "Phone": prospect.phone or "",
-        "Recommended Channel": parse_notes(prospect.notes).get("recommended_channel", "unavailable"),
-        "Outreach Channel": prospect.selected_outreach_channel or "",
-        "Outreach Status": prospect.outreach_status or "",
-        "Contact Form": parse_notes(prospect.notes).get("contact_form_url", ""),
+        "Telephone": prospect.phone or "",
+        "Canal recommande": display_channel(parse_notes(prospect.notes).get("recommended_channel", "unavailable")),
+        "Canal outreach": display_channel(prospect.selected_outreach_channel, ""),
+        "Statut outreach": display_status(prospect.outreach_status, ""),
+        "Formulaire": parse_notes(prospect.notes).get("contact_form_url", ""),
         "Instagram": parse_notes(prospect.notes).get("instagram_url", ""),
         "Facebook": parse_notes(prospect.notes).get("facebook_url", ""),
-        "Send Status": get_send_indicator(prospect.send_status),
-        "First Sent": format_datetime_label(prospect.first_sent_at),
-        "Last Attempt": format_datetime_label(prospect.last_attempt_at),
-        "Attempts": int(prospect.send_attempts or 0),
-        "Last Error": prospect.last_send_error or "",
-        "Mockup URL": prospect.mockup_url or "",
+        "Statut envoi": display_status(get_send_indicator(prospect.send_status)),
+        "Premier envoi": format_datetime_label(prospect.first_sent_at),
+        "Derniere tentative": format_datetime_label(prospect.last_attempt_at),
+        "Tentatives": int(prospect.send_attempts or 0),
+        "Derniere erreur": prospect.last_send_error or "",
+        "URL maquette": prospect.mockup_url or "",
     } for prospect in prospects])
-    edited = st.data_editor(table, hide_index=True, use_container_width=True, key="lead_selection_table", column_config={"Select": st.column_config.CheckboxColumn("Select"), "Priority": st.column_config.NumberColumn("Priority", format="%.2f")}, disabled=["Business", "Country", "Location", "Category", "Priority", "Email", "Phone", "Recommended Channel", "Outreach Channel", "Outreach Status", "Contact Form", "Instagram", "Facebook", "Send Status", "First Sent", "Last Attempt", "Attempts", "Last Error", "Mockup URL"])
-    selected_rows = [index for index, row in edited.iterrows() if row["Select"]]
+    edited = st.data_editor(table, hide_index=True, use_container_width=True, key="lead_selection_table", column_config={"Selectionner": st.column_config.CheckboxColumn("Selectionner"), "Priorite": st.column_config.NumberColumn("Priorite", format="%.2f")}, disabled=["Entreprise", "Pays", "Zone", "Categorie", "Priorite", "Email", "Telephone", "Canal recommande", "Canal outreach", "Statut outreach", "Formulaire", "Instagram", "Facebook", "Statut envoi", "Premier envoi", "Derniere tentative", "Tentatives", "Derniere erreur", "URL maquette"])
+    selected_rows = [index for index, row in edited.iterrows() if row["Selectionner"]]
     st.session_state["selected_lead_ids"] = [prospects[index].id for index in selected_rows]
     selected_prospects = [prospect for prospect in prospects if prospect.id in st.session_state["selected_lead_ids"]]
-    st.caption(f"Filtered leads: {len(prospects)} | Selected leads: {len(selected_prospects)} | Leads with valid email: {sum(1 for prospect in prospects if prospect.email)}")
+    st.caption(f"Leads filtres : {len(prospects)} | Leads selectionnes : {len(selected_prospects)} | Leads avec email valide : {sum(1 for prospect in prospects if prospect.email)}")
     return prospects, selected_prospects
 
 
 def render_send_panel(prospects, selected_prospects, current_prospect, current_subject, current_body, current_html_body):
     if not settings.SMTP_HOST or not settings.SMTP_FROM_EMAIL or not settings.SMTP_PASSWORD:
-        st.warning("SMTP configuration looks incomplete. Sending may fail until SMTP host, from email and password are configured.")
+        st.warning("La configuration SMTP semble incomplete. L'envoi peut echouer tant que le host, l'email expediteur et le mot de passe ne sont pas configures.")
     for warning in settings.get_smtp_identity_warnings():
         st.warning(warning)
     cols = st.columns(5)
     with cols[0]:
-        auto_send_enabled = st.toggle("Auto-send enabled", value=settings.AUTO_SEND_ENABLED)
+        auto_send_enabled = st.toggle("Envoi auto actif", value=settings.AUTO_SEND_ENABLED)
     with cols[1]:
-        send_only_not_sent = st.checkbox("Only NOT_SENT", value=True)
+        send_only_not_sent = st.checkbox("Seulement NON ENVOYE", value=True)
     with cols[2]:
-        send_only_with_email = st.checkbox("Only leads with email", value=True)
+        send_only_with_email = st.checkbox("Seulement les leads avec email", value=True)
     with cols[3]:
-        send_allow_resend = st.checkbox("Allow resend", value=settings.SEND_ALLOW_RESEND)
+        send_allow_resend = st.checkbox("Autoriser le renvoi", value=settings.SEND_ALLOW_RESEND)
     with cols[4]:
-        test_mode_enabled = st.checkbox("Test mode", value=True)
+        test_mode_enabled = st.checkbox("Mode test", value=True)
     opt_cols = st.columns(4)
     with opt_cols[0]:
-        send_status_filter = st.selectbox("Send status filter", ["All", "NOT_SENT", "FAILED", "SKIPPED", "SENT"], index=1)
+        send_status_filter = st.selectbox("Filtre statut d'envoi", [FILTER_ALL, "NOT_SENT", "FAILED", "SKIPPED", "SENT"], index=1, format_func=lambda x: FILTER_ALL if x == FILTER_ALL else display_status(x))
     with opt_cols[1]:
-        min_send_priority = st.slider("Min priority for send", 0, 200, 70)
+        min_send_priority = st.slider("Priorite mini pour envoyer", 0, 200, 70)
     with opt_cols[2]:
-        send_limit = st.number_input("Max emails this action", min_value=1, max_value=50, value=min(settings.SEND_MAX_PER_RUN, 5))
+        send_limit = st.number_input("Max emails pour cette action", min_value=1, max_value=50, value=min(settings.SEND_MAX_PER_RUN, 5))
     with opt_cols[3]:
-        confirm_bulk_send = st.checkbox("Confirm bulk send", value=False)
-    test_to = st.text_input("Test recipient", value=settings.PROFESSIONAL_EMAIL if test_mode_enabled else "", disabled=not test_mode_enabled)
+        confirm_bulk_send = st.checkbox("Confirmer l'envoi en lot", value=False)
+    test_to = st.text_input("Destinataire de test", value=settings.PROFESSIONAL_EMAIL if test_mode_enabled else "", disabled=not test_mode_enabled)
     send_pool = selected_prospects or prospects
     send_candidates = [candidate for candidate in send_pool if (candidate.email or not send_only_with_email)]
-    if send_status_filter != "All":
+    if send_status_filter != FILTER_ALL:
         send_candidates = [candidate for candidate in send_candidates if get_send_indicator(candidate.send_status) == send_status_filter]
     if send_only_not_sent:
         send_candidates = [candidate for candidate in send_candidates if get_send_indicator(candidate.send_status) == "NOT_SENT"]
@@ -716,47 +752,47 @@ def render_send_panel(prospects, selected_prospects, current_prospect, current_s
     top_send_ids = [candidate.id for candidate in send_candidates[:send_limit]]
     valid_email_send_ids = [candidate.id for candidate in send_candidates if candidate.email][:send_limit]
     eligible_with_email = sum(1 for candidate in send_candidates if candidate.email)
-    render_key_value_card("Bulk Send Preview", [("Current scope", "Selected leads" if selected_prospects else "Filtered leads"), ("Scoped leads", str(len(send_pool))), ("Eligible now", str(len(send_candidates))), ("With valid email", str(eligible_with_email)), ("Selected for send", str(len(selected_send_ids))), ("Action max", str(send_limit)), ("Test recipient", test_to if test_mode_enabled and test_to else "Disabled")])
-    render_key_value_card("Current Send Preview", [("Business", current_prospect.business_name), ("Sender", get_business_identity().sender_display_name), ("Recipient", test_to if test_mode_enabled and test_to else (current_prospect.email or "No email")), ("Subject", current_subject or "Not generated"), ("Language", current_prospect.email_language or "N/A"), ("Send status", get_send_indicator(current_prospect.send_status)), ("Mockup URL", current_prospect.mockup_url or "Unavailable")])
-    with st.expander("Body preview before send", expanded=False):
-        st.text_area("Preview", value=current_body or "Email body not generated", height=220, key=f"send_preview_{current_prospect.id}")
+    render_key_value_card("Apercu envoi en lot", [("Scope actuel", "Leads selectionnes" if selected_prospects else "Leads filtres"), ("Leads dans le scope", str(len(send_pool))), ("Eligibles maintenant", str(len(send_candidates))), ("Avec email valide", str(eligible_with_email)), ("Selectionnes pour envoi", str(len(selected_send_ids))), ("Maximum de l'action", str(send_limit)), ("Destinataire de test", test_to if test_mode_enabled and test_to else "Desactive")])
+    render_key_value_card("Apercu de l'envoi courant", [("Entreprise", current_prospect.business_name), ("Expediteur", get_business_identity().sender_display_name), ("Destinataire", test_to if test_mode_enabled and test_to else (current_prospect.email or "Pas d'email")), ("Sujet", current_subject or "Non genere"), ("Langue", current_prospect.email_language or "N/A"), ("Statut d'envoi", display_status(get_send_indicator(current_prospect.send_status))), ("URL maquette", current_prospect.mockup_url or "Indisponible")])
+    with st.expander("Apercu du message avant envoi", expanded=False):
+        st.text_area("Apercu", value=current_body or "Corps d'email non genere", height=220, key=f"send_preview_{current_prospect.id}")
         if current_html_body:
-            with st.expander("HTML preview", expanded=False):
+            with st.expander("Apercu HTML", expanded=False):
                 components.html(current_html_body, height=520, scrolling=True)
-        render_copy_text_button(f"To: {test_to if test_mode_enabled and test_to else (current_prospect.email or '')}\nSubject: {current_subject or ''}\n\n{current_body or ''}", f"copy_preview_{current_prospect.id}", label="Copy email")
+        render_copy_text_button(f"A: {test_to if test_mode_enabled and test_to else (current_prospect.email or '')}\nSujet: {current_subject or ''}\n\n{current_body or ''}", f"copy_preview_{current_prospect.id}", label="Copier l'email")
     if send_only_with_email and not eligible_with_email:
-        st.warning("No valid extracted email is available in the current send scope.")
+        st.warning("Aucun email valide extrait n'est disponible dans le scope actuel.")
     settings.AUTO_SEND_ENABLED = auto_send_enabled
     btns = st.columns(5)
     with btns[0]:
-        send_selected_clicked = st.button("Send selected emails", use_container_width=True)
+        send_selected_clicked = st.button("Envoyer les emails selectionnes", use_container_width=True)
     with btns[1]:
-        send_top_clicked = st.button("Send top priority emails", use_container_width=True)
+        send_top_clicked = st.button("Envoyer les emails prioritaires", use_container_width=True)
     with btns[2]:
-        send_test_clicked = st.button("Send one test email to myself", use_container_width=True)
+        send_test_clicked = st.button("M'envoyer un email test", use_container_width=True)
     with btns[3]:
-        valid_email_clicked = st.button("Send only leads with valid email", use_container_width=True)
+        valid_email_clicked = st.button("Envoyer seulement les leads avec email valide", use_container_width=True)
     with btns[4]:
-        simulate_clicked = st.button("Simulate send (dry run)", use_container_width=True)
+        simulate_clicked = st.button("Simuler l'envoi", use_container_width=True)
     if valid_email_clicked:
         if not valid_email_send_ids:
-            st.warning("No eligible lead with a valid email matches the current send filters.")
+            st.warning("Aucun lead eligible avec email valide ne correspond aux filtres.")
         elif len(valid_email_send_ids) > 1 and not confirm_bulk_send:
-            st.warning("Confirm the bulk send action before sending multiple emails.")
+            st.warning("Confirme l'envoi en lot avant d'envoyer plusieurs emails.")
         else:
             execute_and_rerender("send_valid_email", valid_email_send_ids, min(send_limit, len(valid_email_send_ids)), send_only_not_sent, test_to if test_mode_enabled and test_to else None, False, send_allow_resend)
     if send_selected_clicked:
         if not selected_send_ids:
-            st.warning("Select at least one eligible lead to send.")
+            st.warning("Selectionne au moins un lead eligible a envoyer.")
         elif len(selected_send_ids) > 1 and not confirm_bulk_send:
-            st.warning("Confirm the bulk send action before sending multiple emails.")
+            st.warning("Confirme l'envoi en lot avant d'envoyer plusieurs emails.")
         else:
             execute_and_rerender("send_selected", selected_send_ids, send_limit, send_only_not_sent, test_to if test_mode_enabled and test_to else None, False, send_allow_resend)
     if send_top_clicked:
         if not top_send_ids:
-            st.warning("No eligible leads match the current send filters.")
+            st.warning("Aucun lead eligible ne correspond aux filtres actuels.")
         elif len(top_send_ids) > 1 and not confirm_bulk_send:
-            st.warning("Confirm the bulk send action before sending multiple emails.")
+            st.warning("Confirme l'envoi en lot avant d'envoyer plusieurs emails.")
         else:
             execute_and_rerender("send_top_priority", top_send_ids, send_limit, send_only_not_sent, test_to if test_mode_enabled and test_to else None, False, send_allow_resend)
     if send_test_clicked:
@@ -764,106 +800,106 @@ def render_send_panel(prospects, selected_prospects, current_prospect, current_s
     if simulate_clicked:
         simulation_ids = selected_send_ids or top_send_ids
         if not simulation_ids:
-            st.warning("No eligible leads are available for simulation.")
+            st.warning("Aucun lead eligible n'est disponible pour la simulation.")
         else:
             execute_and_rerender("simulate_send", simulation_ids, min(send_limit, len(simulation_ids)), send_only_not_sent, test_to if test_mode_enabled and test_to else None, True, send_allow_resend)
-    render_section("Selected Actions", "Per-Lead Controls", "Preview, send, skip and update workflow state directly on selected leads or on the current preview lead.")
+    render_section("Actions selectionnees", "Controles par lead", "Previsualise, envoie, ignore et mets a jour l'etat directement sur les leads.")
     for prospect in (selected_prospects or [current_prospect])[:8]:
         notes = parse_notes(prospect.notes)
-        subject, body, _ = build_outreach_preview(prospect, notes, prospect.email_language or "fr", "Primary email")
-        with st.expander(f"{prospect.business_name} | {prospect.location} | {get_send_indicator(prospect.send_status)}", expanded=(prospect.id == current_prospect.id)):
-            render_key_value_card("Lead Delivery Card", [("Recipient", prospect.email or "No email"), ("Fallback channel", notes.get("recommended_channel", "N/A")), ("Phone", prospect.phone or "N/A"), ("Contact form", notes.get("contact_form_url", "N/A")), ("Instagram", notes.get("instagram_url", "N/A")), ("Facebook", notes.get("facebook_url", "N/A")), ("Subject", subject or "Not generated"), ("First sent", format_datetime_label(prospect.first_sent_at)), ("Last attempt", format_datetime_label(prospect.last_attempt_at)), ("Attempts", str(prospect.send_attempts or 0)), ("Last error", prospect.last_send_error or "None")])
+        subject, body, _ = build_outreach_preview(prospect, notes, prospect.email_language or "fr", "Email principal")
+        with st.expander(f"{prospect.business_name} | {prospect.location} | {display_status(get_send_indicator(prospect.send_status))}", expanded=(prospect.id == current_prospect.id)):
+            render_key_value_card("Carte de livraison du lead", [("Destinataire", prospect.email or "Pas d'email"), ("Canal de repli", display_channel(notes.get("recommended_channel", "unavailable"))), ("Telephone", prospect.phone or "N/A"), ("Formulaire", notes.get("contact_form_url", "N/A")), ("Instagram", notes.get("instagram_url", "N/A")), ("Facebook", notes.get("facebook_url", "N/A")), ("Sujet", subject or "Non genere"), ("Premier envoi", format_datetime_label(prospect.first_sent_at)), ("Derniere tentative", format_datetime_label(prospect.last_attempt_at)), ("Tentatives", str(prospect.send_attempts or 0)), ("Derniere erreur", prospect.last_send_error or "Aucune")])
             tracking_cols = st.columns([1.1, 1.1, 1.1, 1.1, 1.6])
             with tracking_cols[0]:
-                if st.button("Mark replied", key=f"reply_{prospect.id}", use_container_width=True):
+                if st.button("Marquer repondu", key=f"reply_{prospect.id}", use_container_width=True):
                     if update_prospect_from_ui(prospect.id, response_status="REPLIED"):
-                        st.success("Lead marked as replied.")
+                        st.success("Lead marque comme ayant repondu.")
                         st.rerun()
             with tracking_cols[1]:
-                if st.button("Interested", key=f"interested_{prospect.id}", use_container_width=True):
+                if st.button("Marquer interesse", key=f"interested_{prospect.id}", use_container_width=True):
                     if update_prospect_from_ui(prospect.id, response_status="INTERESTED"):
-                        st.success("Lead marked as interested.")
+                        st.success("Lead marque comme interesse.")
                         st.rerun()
             with tracking_cols[2]:
-                if st.button("Won", key=f"won_{prospect.id}", use_container_width=True):
+                if st.button("Marquer gagne", key=f"won_{prospect.id}", use_container_width=True):
                     if update_prospect_from_ui(prospect.id, response_status="WON", status="WON"):
-                        st.success("Lead marked as won.")
+                        st.success("Lead marque comme gagne.")
                         st.rerun()
             with tracking_cols[3]:
-                if st.button("Lost", key=f"lost_{prospect.id}", use_container_width=True):
+                if st.button("Marquer perdu", key=f"lost_{prospect.id}", use_container_width=True):
                     if update_prospect_from_ui(prospect.id, response_status="LOST", status="LOST"):
-                        st.success("Lead marked as lost.")
+                        st.success("Lead marque comme perdu.")
                         st.rerun()
             with tracking_cols[4]:
-                potential_value = st.number_input("Potential deal value", min_value=0.0, value=float(prospect.potential_deal_value or 0.0), step=50.0, key=f"potential_value_{prospect.id}")
-                if st.button("Save deal value", key=f"save_value_{prospect.id}", use_container_width=True):
+                potential_value = st.number_input("Valeur potentielle du deal", min_value=0.0, value=float(prospect.potential_deal_value or 0.0), step=50.0, key=f"potential_value_{prospect.id}")
+                if st.button("Enregistrer la valeur", key=f"save_value_{prospect.id}", use_container_width=True):
                     if update_prospect_from_ui(prospect.id, potential_deal_value=float(potential_value)):
-                        st.success("Potential deal value updated.")
+                        st.success("Valeur potentielle mise a jour.")
                         st.rerun()
             if not prospect.email:
-                st.info(f"Send disabled because no email was extracted. Recommended fallback: {notes.get('recommended_channel', 'manual follow-up')}.")
+                st.info(f"Envoi desactive car aucun email n'a ete extrait. Repli recommande : {display_channel(notes.get('recommended_channel', 'unavailable'), 'suivi manuel')}.")
             action_cols = st.columns(6)
             with action_cols[0]:
-                send_now = st.button("Send now", key=f"send_now_{prospect.id}", use_container_width=True, disabled=not bool(prospect.email))
+                send_now = st.button("Envoyer maintenant", key=f"send_now_{prospect.id}", use_container_width=True, disabled=not bool(prospect.email))
             with action_cols[1]:
-                preview_btn = st.button("Preview email", key=f"preview_email_{prospect.id}", use_container_width=True)
+                preview_btn = st.button("Previsualiser l'email", key=f"preview_email_{prospect.id}", use_container_width=True)
             with action_cols[2]:
-                render_copy_text_button(f"To: {prospect.email or ''}\nSubject: {subject or ''}\n\n{body or ''}", f"copy_email_{prospect.id}", label="Copy email")
+                render_copy_text_button(f"A: {prospect.email or ''}\nSujet: {subject or ''}\n\n{body or ''}", f"copy_email_{prospect.id}", label="Copier l'email")
             with action_cols[3]:
-                skip_btn = st.button("Skip", key=f"skip_{prospect.id}", use_container_width=True)
+                skip_btn = st.button("Ignorer", key=f"skip_{prospect.id}", use_container_width=True)
             with action_cols[4]:
-                review_btn = st.button("Mark reviewed", key=f"review_{prospect.id}", use_container_width=True)
+                review_btn = st.button("Marquer revise", key=f"review_{prospect.id}", use_container_width=True)
             with action_cols[5]:
-                contact_btn = st.button("Mark as contacted", key=f"contact_{prospect.id}", use_container_width=True)
+                contact_btn = st.button("Marquer contacte", key=f"contact_{prospect.id}", use_container_width=True)
             if settings.EMAIL_ONLY_OUTREACH:
-                st.caption("Fallback actions are hidden because autonomous outreach is currently email-only.")
+                st.caption("Les actions de repli sont masquees car le mode autonome est actuellement email-only.")
             else:
                 fallback_cols = st.columns(6)
                 with fallback_cols[0]:
-                    render_copy_text_button(notes.get("sms_message", notes.get("sms", "")) or "SMS unavailable", f"sms_{prospect.id}", label="Copy SMS")
+                    render_copy_text_button(notes.get("sms_message", notes.get("sms", "")) or "SMS indisponible", f"sms_{prospect.id}", label="Copier le SMS")
                 with fallback_cols[1]:
-                    render_copy_text_button(notes.get("call_script", "") or "Call script unavailable", f"call_{prospect.id}", label="Copy call script")
+                    render_copy_text_button(notes.get("call_script", "") or "Script d'appel indisponible", f"call_{prospect.id}", label="Copier le script d'appel")
                 with fallback_cols[2]:
                     if notes.get("contact_form_url"):
-                        st.link_button("Open contact form", notes.get("contact_form_url"), use_container_width=True)
+                        st.link_button("Ouvrir le formulaire", notes.get("contact_form_url"), use_container_width=True)
                     else:
-                        st.button("Open contact form", key=f"contact_form_missing_{prospect.id}", disabled=True, use_container_width=True)
+                        st.button("Ouvrir le formulaire", key=f"contact_form_missing_{prospect.id}", disabled=True, use_container_width=True)
                 with fallback_cols[3]:
                     if notes.get("instagram_url"):
-                        st.link_button("Open Instagram", notes.get("instagram_url"), use_container_width=True)
+                        st.link_button("Ouvrir Instagram", notes.get("instagram_url"), use_container_width=True)
                     else:
-                        st.button("Open Instagram", key=f"instagram_missing_{prospect.id}", disabled=True, use_container_width=True)
+                        st.button("Ouvrir Instagram", key=f"instagram_missing_{prospect.id}", disabled=True, use_container_width=True)
                 with fallback_cols[4]:
                     if notes.get("facebook_url"):
-                        st.link_button("Open Facebook", notes.get("facebook_url"), use_container_width=True)
+                        st.link_button("Ouvrir Facebook", notes.get("facebook_url"), use_container_width=True)
                     else:
-                        st.button("Open Facebook", key=f"facebook_missing_{prospect.id}", disabled=True, use_container_width=True)
+                        st.button("Ouvrir Facebook", key=f"facebook_missing_{prospect.id}", disabled=True, use_container_width=True)
                 with fallback_cols[5]:
-                    render_copy_text_button(notes.get("social_dm_message", "") or "DM unavailable", f"dm_{prospect.id}", label="Copy DM message")
-                with st.expander("Prepared fallback messages", expanded=False):
+                    render_copy_text_button(notes.get("social_dm_message", "") or "DM indisponible", f"dm_{prospect.id}", label="Copier le DM")
+                with st.expander("Messages de repli prepares", expanded=False):
                     st.text_area("SMS", value=notes.get("sms_message", notes.get("sms", "")), height=90, key=f"sms_preview_{prospect.id}")
-                    st.text_area("Call script", value=notes.get("call_script", ""), height=180, key=f"call_preview_{prospect.id}")
-                    st.text_area("Contact form message", value=notes.get("contact_form_message", ""), height=140, key=f"form_preview_{prospect.id}")
-                    st.text_area("Social DM", value=notes.get("social_dm_message", ""), height=120, key=f"dm_preview_{prospect.id}")
+                    st.text_area("Script d'appel", value=notes.get("call_script", ""), height=180, key=f"call_preview_{prospect.id}")
+                    st.text_area("Message formulaire", value=notes.get("contact_form_message", ""), height=140, key=f"form_preview_{prospect.id}")
+                    st.text_area("DM reseaux sociaux", value=notes.get("social_dm_message", ""), height=120, key=f"dm_preview_{prospect.id}")
             if preview_btn:
                 st.session_state["preview_prospect_id"] = prospect.id
                 st.rerun()
             if send_now:
                 execute_and_rerender("send_single_now", [prospect.id], 1, send_only_not_sent, test_to if test_mode_enabled and test_to else None, False, send_allow_resend)
             if skip_btn and update_prospect_from_ui(prospect.id, send_status="SKIPPED", last_send_error="ui_skipped"):
-                st.success("Lead marked as skipped.")
+                st.success("Lead marque comme ignore.")
                 st.rerun()
             if review_btn and update_prospect_from_ui(prospect.id, status="REVIEWED"):
-                st.success("Lead marked as reviewed.")
+                st.success("Lead marque comme revise.")
                 st.rerun()
             if contact_btn and update_prospect_from_ui(prospect.id, status="CONTACTED"):
-                st.success("Lead marked as contacted.")
+                st.success("Lead marque comme contacte.")
                 st.rerun()
 
 
 def execute_and_rerender(action_name, selected_ids, limit, only_not_sent, test_to, simulate, allow_resend):
     summary = execute_ui_send_action(action_name, selected_ids=selected_ids, limit=limit, only_not_sent=only_not_sent, test_to=test_to, simulate=simulate, allow_resend=allow_resend)
-    st.success(f"Action complete. sent={summary.get('sent', 0)} failed={summary.get('failed', 0)} skipped={summary.get('skipped', 0)} simulated={summary.get('simulated', 0)}")
+    st.success(f"Action terminee. envoyes={summary.get('sent', 0)} echecs={summary.get('failed', 0)} ignores={summary.get('skipped', 0)} simulation={summary.get('simulated', 0)}")
     st.rerun()
 
 
@@ -879,58 +915,67 @@ def render_prospect_summary(prospect, key_prefix: str):
     st.markdown(f'<div class="kah-inline-badges">{badges}</div>', unsafe_allow_html=True)
     cols = st.columns(2)
     with cols[0]:
-        render_key_value_card("Market Profile", [("Country", f"{prospect.country} - {get_country_display_name(prospect.country)}"), ("Location", prospect.location), ("Category", prospect.category), ("Website", prospect.website or "N/A"), ("Priority", str(round(prospect.priority_score or 0, 2))), ("New business", str(round(prospect.new_business_score or 0, 2))), ("Target type", prospect.target_type or "N/A"), ("Send status", get_send_indicator(prospect.send_status))])
+        render_key_value_card("Profil marche", [("Pays", f"{prospect.country} - {get_country_display_name(prospect.country)}"), ("Zone", prospect.location), ("Categorie", prospect.category), ("Site web", prospect.website or "N/A"), ("Priorite", str(round(prospect.priority_score or 0, 2))), ("Score nouveau business", str(round(prospect.new_business_score or 0, 2))), ("Type de cible", prospect.target_type or "N/A"), ("Statut d'envoi", display_status(get_send_indicator(prospect.send_status)))])
     with cols[1]:
-        render_key_value_card("Contact Readiness", [("Email", prospect.email or "N/A"), ("Phone", prospect.phone or "N/A"), ("Recommended channel", notes.get("recommended_channel", "unavailable")), ("Selected offer", prospect.selected_offer_type or "N/A"), ("Selected outreach", prospect.selected_outreach_channel or "N/A"), ("Outreach status", prospect.outreach_status or "N/A"), ("Response status", prospect.response_status or "NO_RESPONSE"), ("Potential deal", str(prospect.potential_deal_value or 0.0)), ("Contact form", notes.get("contact_form_url", "N/A")), ("Instagram", notes.get("instagram_url", "N/A")), ("Social-first", "Yes" if prospect.social_first_business else "No"), ("Pages", str(prospect.website_page_count or 0)), ("Booking system", "Yes" if prospect.has_booking_system else "No"), ("SEO foundation", "Yes" if prospect.has_seo_foundation else "No"), ("Modern UI", "Yes" if prospect.has_modern_ui else "No"), ("Language", prospect.email_language or "N/A"), ("Estimated price", format_price_range(prospect.estimated_price_min, prospect.estimated_price_max, prospect.country)), ("Mockup", get_mockup_indicator(prospect.mockup_status)), ("Send attempts", str(prospect.send_attempts or 0))])
+        render_key_value_card("Preparation contact", [("Email", prospect.email or "N/A"), ("Telephone", prospect.phone or "N/A"), ("Canal recommande", display_channel(notes.get("recommended_channel", "unavailable"))), ("Offre selectionnee", display_offer(prospect.selected_offer_type)), ("Outreach selectionnee", display_channel(prospect.selected_outreach_channel, "N/A")), ("Statut outreach", display_status(prospect.outreach_status, "N/A")), ("Statut reponse", display_status(prospect.response_status or "NO_RESPONSE")), ("Deal potentiel", str(prospect.potential_deal_value or 0.0)), ("Formulaire", notes.get("contact_form_url", "N/A")), ("Instagram", notes.get("instagram_url", "N/A")), ("Social-first", display_bool(prospect.social_first_business)), ("Pages", str(prospect.website_page_count or 0)), ("Systeme de reservation", display_bool(prospect.has_booking_system)), ("Base SEO", display_bool(prospect.has_seo_foundation)), ("UI moderne", display_bool(prospect.has_modern_ui)), ("Langue", prospect.email_language or "N/A"), ("Prix estime", format_price_range(prospect.estimated_price_min, prospect.estimated_price_max, prospect.country)), ("Maquette", display_mockup_status(get_mockup_indicator(prospect.mockup_status))), ("Tentatives d'envoi", str(prospect.send_attempts or 0))])
     render_mockup_actions(prospect, key_prefix)
 
 
 def render_sender_identity_preview():
     identity = get_business_identity()
+    label_map = {
+        "Business": "Entreprise",
+        "Sender": "Expediteur",
+        "Email": "Email",
+        "Phone": "Telephone",
+        "Website": "Site web",
+        "Portfolio": "Portfolio",
+        "Mockup quality": "Qualite maquette",
+    }
     for warning in settings.get_smtp_identity_warnings():
         st.warning(warning)
     cols = st.columns([1, 1.1])
     with cols[0]:
-        render_key_value_card("Sender Profile", get_sender_preview_rows())
+        render_key_value_card("Profil expediteur", [(label_map.get(label, label), value) for label, value in get_sender_preview_rows()])
     with cols[1]:
-        render_key_value_card("Email Signature", [("Display name", identity.sender_display_name), ("Label", identity.signature_label), ("Email", identity.professional_email), ("Phone", identity.professional_phone), ("Website", identity.website)])
-        with st.expander("Signature preview", expanded=False):
+        render_key_value_card("Signature email", [("Nom affiche", identity.sender_display_name), ("Label", identity.signature_label), ("Email", identity.professional_email), ("Telephone", identity.professional_phone), ("Site web", identity.website)])
+        with st.expander("Apercu signature", expanded=False):
             st.code(get_text_signature("fr"), language="text")
 
 
 def render_search_diagnostics():
     latest_run = get_latest_search_run()
     if not latest_run or not latest_run.diagnostics_json:
-        st.info("No search diagnostics available yet.")
+        st.info("Aucun diagnostic de recherche disponible pour le moment.")
         return
     try:
         diagnostics = json.loads(latest_run.diagnostics_json)
     except json.JSONDecodeError:
-        st.warning("Search diagnostics are present but could not be parsed.")
+        st.warning("Les diagnostics de recherche sont presents mais n'ont pas pu etre lus.")
         return
-    st.caption(f"Latest run: {latest_run.locations} | {latest_run.categories} | queries/combo={settings.SEARCH_QUERIES_PER_COMBO} | raw target={settings.SEARCH_MAX_RAW_CANDIDATES} | fallback={settings.SEARCH_FALLBACK_ENABLED} | broaden={settings.SEARCH_BROADEN_IF_EMPTY}")
+    st.caption(f"Dernier run : {latest_run.locations} | {latest_run.categories} | requetes/combo={settings.SEARCH_QUERIES_PER_COMBO} | cible brute={settings.SEARCH_MAX_RAW_CANDIDATES} | fallback={settings.SEARCH_FALLBACK_ENABLED} | elargissement={settings.SEARCH_BROADEN_IF_EMPTY}")
     for item in diagnostics:
         title = f"{item.get('location')} | {item.get('requested_category')} | {item.get('country')}"
         with st.expander(title):
             cols = st.columns(2)
             with cols[0]:
-                render_key_value_card("Search Plan", [("Normalized location", item.get("normalized_location", "")), ("Country", item.get("country", "")), ("Language", item.get("language", "")), ("Category terms", ", ".join(item.get("translated_terms", [])[:4])), ("OSM tags", ", ".join(f'{tag.get("key")}={tag.get("value")}' for tag in item.get("osm_tags", [])[:3])), ("Raw candidates", str(item.get("raw_candidates", 0)))])
+                render_key_value_card("Plan de recherche", [("Zone normalisee", item.get("normalized_location", "")), ("Pays", item.get("country", "")), ("Langue", item.get("language", "")), ("Termes categorie", ", ".join(item.get("translated_terms", [])[:4])), ("Tags OSM", ", ".join(f'{tag.get("key")}={tag.get("value")}' for tag in item.get("osm_tags", [])[:3])), ("Candidats bruts", str(item.get("raw_candidates", 0)))])
             with cols[1]:
-                render_key_value_card("Outcome", [("Processed", str(item.get("processed_candidates", 0))), ("Valid kept", str(item.get("valid_prospects_kept", 0))), ("Rejected", str(item.get("rejected_after_filter", 0))), ("Aliases", ", ".join(item.get("location_aliases", [])[:4])), ("Queries", str(len(item.get("queries", []))))])
-            st.markdown("**Generated queries**")
+                render_key_value_card("Resultat", [("Traites", str(item.get("processed_candidates", 0))), ("Valides gardes", str(item.get("valid_prospects_kept", 0))), ("Rejetes", str(item.get("rejected_after_filter", 0))), ("Alias", ", ".join(item.get("location_aliases", [])[:4])), ("Requetes", str(len(item.get("queries", []))))])
+            st.markdown("**Requetes generees**")
             st.code("\n".join(item.get("queries", [])), language="text")
             if item.get("broadened_queries"):
-                st.markdown("**Broadened fallback queries**")
+                st.markdown("**Requetes de fallback elargies**")
                 st.code("\n".join(item.get("broadened_queries", [])), language="text")
             if item.get("generic_queries"):
-                st.markdown("**Generic fallback queries**")
+                st.markdown("**Requetes de fallback generiques**")
                 st.code("\n".join(item.get("generic_queries", [])), language="text")
             for provider_diag in item.get("providers", []):
                 provider_title = f"{provider_diag.get('provider')} | kept={provider_diag.get('kept_candidates', 0)} | raw={provider_diag.get('raw_results', 0)}"
                 st.markdown(f"**{provider_title}**")
                 if provider_diag.get("notes"):
                     st.caption(provider_diag.get("notes"))
-                st.caption(f"Fallback triggered: {provider_diag.get('fallback_triggered', False)}")
+                st.caption(f"Repli declenche : {provider_diag.get('fallback_triggered', False)}")
                 if provider_diag.get("queries"):
                     st.dataframe(pd.DataFrame(provider_diag.get("queries", [])), use_container_width=True)
 
@@ -971,48 +1016,48 @@ def apply_channel_filters(prospects, *, phone_available: bool, contact_form_avai
 
 
 def render_alternative_outreach_panel(prospect, notes_data: dict):
-    render_section("Fallback Outreach", "Alternative Channels", "Use the best backup contact path when no email is available.")
+    render_section("Canaux de repli", "Canaux alternatifs", "Utilise le meilleur canal de secours quand aucun email n'est disponible.")
     if settings.EMAIL_ONLY_OUTREACH:
-        st.info("Email-only outreach is enabled. Leads without email are skipped in autonomous mode.")
+        st.info("Le mode email-only est actif. Les leads sans email sont ignores en mode autonome.")
         return
-    render_key_value_card("Channel Routing", [
-        ("Recommended channel", notes_data.get("recommended_channel", "unavailable")),
-        ("Contact strategy", notes_data.get("contact_strategy", "unavailable")),
-        ("Recommended CTA", notes_data.get("recommended_cta", "N/A")),
-        ("Email unavailable reason", notes_data.get("email_unavailable_reason", "N/A")),
-        ("Phone", prospect.phone or "N/A"),
-        ("Contact form", notes_data.get("contact_form_url", "N/A")),
+    render_key_value_card("Routage canal", [
+        ("Canal recommande", display_channel(notes_data.get("recommended_channel", "unavailable"))),
+        ("Strategie de contact", notes_data.get("contact_strategy", "unavailable")),
+        ("CTA recommande", notes_data.get("recommended_cta", "N/A")),
+        ("Raison absence email", notes_data.get("email_unavailable_reason", "N/A")),
+        ("Telephone", prospect.phone or "N/A"),
+        ("Formulaire", notes_data.get("contact_form_url", "N/A")),
         ("Instagram", notes_data.get("instagram_url", "N/A")),
         ("Facebook", notes_data.get("facebook_url", "N/A")),
         ("WhatsApp", notes_data.get("whatsapp_url", "N/A")),
     ])
     action_cols = st.columns(6)
     with action_cols[0]:
-        render_copy_text_button(notes_data.get("sms_message", notes_data.get("sms", "")) or "SMS unavailable", f"alt_sms_{prospect.id}", label="Copy SMS")
+        render_copy_text_button(notes_data.get("sms_message", notes_data.get("sms", "")) or "SMS indisponible", f"alt_sms_{prospect.id}", label="Copier le SMS")
     with action_cols[1]:
-        render_copy_text_button(notes_data.get("call_script", "") or "Call script unavailable", f"alt_call_{prospect.id}", label="Copy call script")
+        render_copy_text_button(notes_data.get("call_script", "") or "Script d'appel indisponible", f"alt_call_{prospect.id}", label="Copier le script d'appel")
     with action_cols[2]:
         if notes_data.get("contact_form_url"):
-            st.link_button("Open contact form", notes_data.get("contact_form_url"), use_container_width=True)
+            st.link_button("Ouvrir le formulaire", notes_data.get("contact_form_url"), use_container_width=True)
         else:
-            st.button("Open contact form", key=f"alt_form_missing_{prospect.id}", disabled=True, use_container_width=True)
+            st.button("Ouvrir le formulaire", key=f"alt_form_missing_{prospect.id}", disabled=True, use_container_width=True)
     with action_cols[3]:
         if notes_data.get("instagram_url"):
-            st.link_button("Open Instagram", notes_data.get("instagram_url"), use_container_width=True)
+            st.link_button("Ouvrir Instagram", notes_data.get("instagram_url"), use_container_width=True)
         else:
-            st.button("Open Instagram", key=f"alt_instagram_missing_{prospect.id}", disabled=True, use_container_width=True)
+            st.button("Ouvrir Instagram", key=f"alt_instagram_missing_{prospect.id}", disabled=True, use_container_width=True)
     with action_cols[4]:
         if notes_data.get("facebook_url"):
-            st.link_button("Open Facebook", notes_data.get("facebook_url"), use_container_width=True)
+            st.link_button("Ouvrir Facebook", notes_data.get("facebook_url"), use_container_width=True)
         else:
-            st.button("Open Facebook", key=f"alt_facebook_missing_{prospect.id}", disabled=True, use_container_width=True)
+            st.button("Ouvrir Facebook", key=f"alt_facebook_missing_{prospect.id}", disabled=True, use_container_width=True)
     with action_cols[5]:
-        render_copy_text_button(notes_data.get("social_dm_message", "") or "DM unavailable", f"alt_dm_{prospect.id}", label="Copy DM message")
-    with st.expander("Prepared fallback copy", expanded=False):
-        st.text_area("Prepared SMS", value=notes_data.get("sms_message", notes_data.get("sms", "")), height=90, key=f"alt_sms_preview_{prospect.id}")
-        st.text_area("Prepared call script", value=notes_data.get("call_script", ""), height=180, key=f"alt_call_preview_{prospect.id}")
-        st.text_area("Prepared contact form message", value=notes_data.get("contact_form_message", ""), height=130, key=f"alt_form_preview_{prospect.id}")
-        st.text_area("Prepared DM message", value=notes_data.get("social_dm_message", ""), height=120, key=f"alt_dm_preview_{prospect.id}")
+        render_copy_text_button(notes_data.get("social_dm_message", "") or "DM indisponible", f"alt_dm_{prospect.id}", label="Copier le DM")
+    with st.expander("Messages de repli prepares", expanded=False):
+        st.text_area("SMS prepare", value=notes_data.get("sms_message", notes_data.get("sms", "")), height=90, key=f"alt_sms_preview_{prospect.id}")
+        st.text_area("Script d'appel prepare", value=notes_data.get("call_script", ""), height=180, key=f"alt_call_preview_{prospect.id}")
+        st.text_area("Message formulaire prepare", value=notes_data.get("contact_form_message", ""), height=130, key=f"alt_form_preview_{prospect.id}")
+        st.text_area("DM prepare", value=notes_data.get("social_dm_message", ""), height=120, key=f"alt_dm_preview_{prospect.id}")
 
 
 def build_outreach_preview(prospect, notes_data: dict, lang: str, outreach_asset: str) -> tuple[str, str, str]:
@@ -1089,7 +1134,7 @@ def execute_ui_send_action(action_name: str, *, selected_ids: list[int], limit: 
     def handle_progress(index: int, total: int, result_row: dict, summary: dict) -> None:
         total_count = max(total, 1)
         progress_bar.progress(index / total_count)
-        progress_placeholder.caption(f"Progress: {index}/{total_count} | sent={summary.get('sent', 0)} failed={summary.get('failed', 0)} skipped={summary.get('skipped', 0)} simulated={summary.get('simulated', 0)} | recipient={result_row.get('actual_recipient', '')}")
+        progress_placeholder.caption(f"Progression : {index}/{total_count} | envoyes={summary.get('sent', 0)} echecs={summary.get('failed', 0)} ignores={summary.get('skipped', 0)} simulation={summary.get('simulated', 0)} | destinataire={result_row.get('actual_recipient', '')}")
 
     summary = service.send_emails(limit=limit, only_not_sent=only_not_sent, test_to=test_to, simulate=simulate, selected_ids=selected_ids, allow_resend=allow_resend, progress_callback=handle_progress)
     progress_bar.progress(1.0 if selected_ids else 0.0)
@@ -1229,20 +1274,20 @@ def is_public_mockup_url(url: str | None) -> bool:
 
 def render_copy_link_button(url: str, key: str):
     safe_key = key.replace(" ", "_")
-    components.html(f"""<button id="{safe_key}" style="width:100%;padding:0.72rem 0.9rem;border:1px solid rgba(201,168,106,0.34);border-radius:14px;background:linear-gradient(180deg, rgba(17,19,23,0.98), rgba(10,11,14,0.98));color:#F5EFE3;font-weight:700;letter-spacing:0.05em;cursor:pointer;">Copy Link</button><div id="{safe_key}_status" style="font-size:12px;color:#9C968A;margin-top:0.35rem;"></div><script>const button=document.getElementById("{safe_key}");const status=document.getElementById("{safe_key}_status");button.addEventListener("click",async()=>{{try{{await navigator.clipboard.writeText({json.dumps(url)});status.textContent="Link copied";}}catch(error){{status.textContent="Copy unavailable here. Use the URL below.";}}}});</script>""", height=74)
+    components.html(f"""<button id="{safe_key}" style="width:100%;padding:0.72rem 0.9rem;border:1px solid rgba(201,168,106,0.34);border-radius:14px;background:linear-gradient(180deg, rgba(17,19,23,0.98), rgba(10,11,14,0.98));color:#F5EFE3;font-weight:700;letter-spacing:0.05em;cursor:pointer;">Copier le lien</button><div id="{safe_key}_status" style="font-size:12px;color:#9C968A;margin-top:0.35rem;"></div><script>const button=document.getElementById("{safe_key}");const status=document.getElementById("{safe_key}_status");button.addEventListener("click",async()=>{{try{{await navigator.clipboard.writeText({json.dumps(url)});status.textContent="Lien copie";}}catch(error){{status.textContent="Copie indisponible ici. Utilise l'URL ci-dessous.";}}}});</script>""", height=74)
 
 
 def render_mockup_actions(prospect, key_prefix: str):
     mockup_url = prospect.mockup_url or ""
     if not mockup_url:
-        st.caption("Mockup URL unavailable")
+        st.caption("URL maquette indisponible")
         return
     cols = st.columns(2)
     with cols[0]:
         if is_public_mockup_url(mockup_url):
-            st.link_button("Open Mockup", mockup_url, use_container_width=True)
+            st.link_button("Ouvrir la maquette", mockup_url, use_container_width=True)
         else:
-            st.button("Open Mockup", disabled=True, key=f"{key_prefix}_open_disabled", use_container_width=True)
+            st.button("Ouvrir la maquette", disabled=True, key=f"{key_prefix}_open_disabled", use_container_width=True)
     with cols[1]:
         render_copy_link_button(mockup_url, f"{key_prefix}_copy")
     st.caption(mockup_url)
@@ -1267,21 +1312,21 @@ def get_latest_catchup_status() -> dict[str, str]:
     try:
         lines = latest_log.read_text(encoding="utf-8", errors="ignore").splitlines()
     except Exception:
-        return {"last_check": latest_log.stat().st_mtime, "status": "UNKNOWN", "reason": "could_not_read_log"}
+        return {"last_check": latest_log.stat().st_mtime, "status": "UNKNOWN", "reason": "impossible de lire le log"}
 
     joined = "\n".join(lines[-40:])
     status = "UNKNOWN"
-    reason = "catchup_log_detected"
+    reason = "log de rattrapage detecte"
 
     if any("Skipping startup catch-up because a report already exists for today." in line for line in lines):
         status = "SKIPPED"
-        reason = "report already exists today"
+        reason = "un rapport existe deja aujourd'hui"
     elif any("No report found for today. Launching autonomous outreach catch-up run." in line for line in lines):
         status = "LAUNCHED"
-        reason = "missed run recovered after sign-in"
+        reason = "run manque relance apres connexion"
     elif any("Startup catch-up exit code:" in line for line in lines):
         status = "COMPLETED"
-        reason = next((line.replace("Startup catch-up exit code:", "exit code").strip() for line in lines if "Startup catch-up exit code:" in line), "completed")
+        reason = next((line.replace("Startup catch-up exit code:", "code de sortie").strip() for line in lines if "Startup catch-up exit code:" in line), "termine")
 
     return {
         "last_check": latest_log.stat().st_mtime,
