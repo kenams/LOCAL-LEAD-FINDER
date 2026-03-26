@@ -63,7 +63,7 @@ class Settings:
     ENABLE_SCHEDULER: bool = os.getenv("ENABLE_SCHEDULER", "true").lower() == "true"
     AUTO_MODE_ENABLED: bool = os.getenv("AUTO_MODE_ENABLED", "true").lower() == "true"
     AUTO_MODE_NAME: str = os.getenv("AUTO_MODE_NAME", "Auto Outreach")
-    AUTO_MODE_CRON: str = os.getenv("AUTO_MODE_CRON", "0 9,18 * * *")
+    AUTO_MODE_CRON: str = os.getenv("AUTO_MODE_CRON", "0 9,13,18 * * *")
     AUTO_MODE_LOCATIONS: str = os.getenv("AUTO_MODE_LOCATIONS", "Geneva,Sydney")
     AUTO_MODE_CATEGORIES: str = os.getenv(
         "AUTO_MODE_CATEGORIES",
@@ -120,9 +120,9 @@ class Settings:
         "SMTP_FROM_NAME",
         os.getenv("SENDER_DISPLAY_NAME", DEFAULT_SENDER_IDENTITY.sender_display_name),
     )
-    SEND_MAX_PER_RUN: int = int(os.getenv("SEND_MAX_PER_RUN", 5))
+    SEND_MAX_PER_RUN: int = int(os.getenv("SEND_MAX_PER_RUN", 1))
     SEND_DELAY_SECONDS: float = float(os.getenv("SEND_DELAY_SECONDS", 1.5))
-    SEND_BATCH_SIZE: int = int(os.getenv("SEND_BATCH_SIZE", 5))
+    SEND_BATCH_SIZE: int = int(os.getenv("SEND_BATCH_SIZE", 1))
     SEND_ALLOW_RESEND: bool = os.getenv("SEND_ALLOW_RESEND", "false").lower() == "true"
 
     def get_smtp_identity_warnings(self) -> list[str]:

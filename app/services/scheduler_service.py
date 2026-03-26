@@ -90,6 +90,7 @@ class SchedulerService:
             schedule.limit_per_location = limit
             schedule.language = language
             schedule.enabled = enabled
+            schedule.next_run = self._calculate_next_run(cron_expression) if enabled else None
             db.commit()
             db.refresh(schedule)
             self._reschedule(schedule)
@@ -193,7 +194,8 @@ class SchedulerService:
                 replace_existing=True,
             )
             job = self.scheduler.get_job(f"schedule_{schedule.id}")
-            schedule.next_run = job.next_run_time.replace(tzinfo=None) if job and job.next_run_time else None
+            next_run_time = getattr(job, "next_run_time", None)
+            schedule.next_run = next_run_time.replace(tzinfo=None) if next_run_time else self._calculate_next_run(schedule.cron_expression)
             db = SessionLocal()
             try:
                 db_schedule = db.query(Schedule).filter(Schedule.id == schedule.id).first()
@@ -213,7 +215,8 @@ class SchedulerService:
             schedules = db.query(Schedule).all()
             for schedule in schedules:
                 job = self.scheduler.get_job(f"schedule_{schedule.id}") if self.scheduler.running else None
-                schedule.next_run = job.next_run_time.replace(tzinfo=None) if job and job.next_run_time else schedule.next_run
+                next_run_time = getattr(job, "next_run_time", None)
+                schedule.next_run = next_run_time.replace(tzinfo=None) if next_run_time else (schedule.next_run or self._calculate_next_run(schedule.cron_expression))
             db.commit()
         finally:
             db.close()

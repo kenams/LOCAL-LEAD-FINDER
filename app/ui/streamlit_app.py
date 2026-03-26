@@ -29,6 +29,34 @@ from app.ui.ui_theme import badge_html, inject_global_styles, priority_badge_htm
 
 SEARCH_LOCATIONS = ["Toulouse", "Montpellier", "Marseille", "Paris", "Geneva", "Zurich", "Lausanne", "New York", "Miami", "Dallas", "Los Angeles", "Sydney", "Melbourne", "Brisbane", "London", "Manchester"]
 SEARCH_CATEGORIES = ["coiffeur", "salon de coiffure", "institut de beaute", "spa", "plombier", "electricien", "dentiste", "avocat", "restaurant", "boulangerie", "coach sportif", "garagiste"]
+AUTO_ZONE_GROUPS = {
+    "France": ["Paris", "Toulouse", "Montpellier", "Marseille", "Lyon", "Nice", "Bordeaux", "Lille"],
+    "Suisse": ["Geneva", "Lausanne", "Zurich", "Basel", "Bern", "Fribourg"],
+    "Royaume-Uni": ["London", "Manchester", "Birmingham", "Leeds", "Bristol"],
+    "Etats-Unis": ["New York", "Miami", "Dallas", "Los Angeles", "Chicago", "San Francisco", "Austin"],
+    "Australie": ["Sydney", "Melbourne", "Brisbane", "Perth", "Adelaide"],
+    "Canada": ["Montreal", "Toronto", "Vancouver", "Quebec", "Calgary"],
+}
+AUTO_CATEGORY_OPTIONS = [
+    "marketing",
+    "consultant",
+    "agency",
+    "web design",
+    "seo",
+    "coach",
+    "accountant",
+    "lawyer",
+    "financial advisor",
+    "real estate",
+    "coiffeur",
+    "institut de beaute",
+    "spa",
+    "plombier",
+    "electricien",
+    "dentiste",
+    "restaurant",
+]
+TIME_SLOT_HOURS = {"Matin": 9, "Midi": 13, "Soir": 18}
 
 STATUS_LABELS = {
     "IDLE": "En attente",
@@ -111,6 +139,42 @@ def display_mockup_status(value: str | None, default: str = "N/A") -> str:
     if value is None or value == "":
         return default
     return MOCKUP_LABELS.get(str(value).lower(), str(value))
+
+
+def split_csv_values(raw_value: str | None) -> list[str]:
+    if not raw_value:
+        return []
+    return [item.strip() for item in str(raw_value).split(",") if item.strip()]
+
+
+def join_csv_values(selected_values: list[str], custom_values: str | None = None) -> str:
+    merged: list[str] = []
+    for value in list(selected_values) + split_csv_values(custom_values):
+        if value and value not in merged:
+            merged.append(value)
+    return ",".join(merged)
+
+
+def infer_time_slots(cron_expression: str | None) -> list[str]:
+    if not cron_expression:
+        return []
+    parts = str(cron_expression).split()
+    if len(parts) != 5:
+        return []
+    hour_field = parts[1]
+    selected: list[str] = []
+    for slot_label, hour in TIME_SLOT_HOURS.items():
+        if str(hour) in hour_field.split(","):
+            selected.append(slot_label)
+    return selected
+
+
+def build_daily_cron(selected_slots: list[str]) -> str:
+    selected_hours = [str(TIME_SLOT_HOURS[slot]) for slot in selected_slots if slot in TIME_SLOT_HOURS]
+    unique_hours = list(dict.fromkeys(selected_hours))
+    if not unique_hours:
+        return "0 9 * * *"
+    return f"0 {','.join(unique_hours)} * * *"
 
 
 def render_automation_center():
@@ -388,33 +452,76 @@ def render_automation_center():
     else:
         st.info("Aucun lead chaud pour le moment. Tu peux marquer les reponses depuis le mode debug.")
 
-    render_section("Configuration", "Configuration minimale", "Ajuste le planning autonome, le scope et les reglages d'execution depuis un petit panneau.")
-    st.caption("Rythme prod recommande : `0 9,18 * * *` avec `5` envois par run pour viser `10` envois par jour.")
-    config_cols = st.columns([1.2, 1.2, 0.8, 0.8, 1.2])
+    render_section("Configuration", "Configuration simple", "Choisis les pays, les niches et le rythme d'envoi sans toucher aux reglages techniques.")
+    configured_locations = split_csv_values(status.get("locations", settings.AUTO_MODE_LOCATIONS))
+    configured_categories = split_csv_values(status.get("categories", settings.AUTO_MODE_CATEGORIES))
+    current_time_slots = infer_time_slots(status.get("cron_expression", settings.AUTO_MODE_CRON)) or ["Matin", "Midi", "Soir"]
+    default_countries = [country for country, cities in AUTO_ZONE_GROUPS.items() if any(city in configured_locations for city in cities)]
+    if not default_countries:
+        default_countries = ["France", "Suisse"]
+    zone_options = []
+    for country in default_countries:
+        zone_options.extend(AUTO_ZONE_GROUPS.get(country, []))
+    zone_options = list(dict.fromkeys(zone_options))
+    selected_zone_defaults = [city for city in configured_locations if city in zone_options]
+    extra_location_defaults = [city for city in configured_locations if city not in {item for cities in AUTO_ZONE_GROUPS.values() for item in cities}]
+    selected_category_defaults = [category for category in configured_categories if category in AUTO_CATEGORY_OPTIONS]
+    extra_category_defaults = [category for category in configured_categories if category not in AUTO_CATEGORY_OPTIONS]
+    config_cols = st.columns([1.05, 1.15, 1.2, 0.7, 0.7])
     with config_cols[0]:
-        auto_locations = st.text_input("Zones", value=status.get("locations", settings.AUTO_MODE_LOCATIONS), key="auto_cfg_locations")
+        auto_countries = st.multiselect("Pays", list(AUTO_ZONE_GROUPS.keys()), default=default_countries, key="auto_cfg_countries")
     with config_cols[1]:
-        auto_categories = st.text_input("Categories", value=status.get("categories", settings.AUTO_MODE_CATEGORIES), key="auto_cfg_categories")
+        category_selection = st.multiselect("Categories", AUTO_CATEGORY_OPTIONS, default=selected_category_defaults or configured_categories[: min(len(configured_categories), len(AUTO_CATEGORY_OPTIONS))], key="auto_cfg_categories_select")
     with config_cols[2]:
-        auto_limit = st.number_input("Limite", min_value=1, max_value=50, value=int(status.get("limit", settings.AUTO_MODE_LIMIT)), key="auto_cfg_limit")
+        send_slots = st.multiselect("Moments d'envoi", list(TIME_SLOT_HOURS.keys()), default=current_time_slots, key="auto_cfg_time_slots", help="Chaque moment choisi declenche une vague automatique.")
     with config_cols[3]:
-        auto_language = st.selectbox("Langue", ["fr", "en"], index=0 if status.get("language", "fr") == "fr" else 1, key="auto_cfg_language")
+        auto_limit = st.number_input("Limite", min_value=1, max_value=50, value=int(status.get("limit", settings.AUTO_MODE_LIMIT)), key="auto_cfg_limit")
     with config_cols[4]:
-        auto_cron = st.text_input("Cron", value=status.get("cron_expression", settings.AUTO_MODE_CRON), key="auto_cfg_cron")
-    runtime_cols = st.columns(4)
+        auto_language = st.selectbox("Langue", ["fr", "en"], index=0 if status.get("language", "fr") == "fr" else 1, key="auto_cfg_language")
+    zone_pool = []
+    for country in auto_countries:
+        zone_pool.extend(AUTO_ZONE_GROUPS.get(country, []))
+    zone_pool = list(dict.fromkeys(zone_pool))
+    advanced_scope_cols = st.columns(2)
+    with advanced_scope_cols[0]:
+        location_selection = st.multiselect("Zones", zone_pool, default=[city for city in selected_zone_defaults if city in zone_pool], key="auto_cfg_locations_select", help="Selectionne les villes a cibler parmi les pays choisis.")
+        extra_locations = st.text_input("Autres zones (optionnel)", value=",".join(extra_location_defaults), key="auto_cfg_locations_extra", help="Ajoute ici une ville hors liste, separee par des virgules si besoin.")
+    with advanced_scope_cols[1]:
+        extra_categories = st.text_input("Autres categories (optionnel)", value=",".join(extra_category_defaults), key="auto_cfg_categories_extra", help="Ajoute ici une categorie hors liste, separee par des virgules si besoin.")
+    auto_locations = join_csv_values(location_selection, extra_locations)
+    auto_categories = join_csv_values(category_selection, extra_categories)
+    runtime_cols = st.columns([1, 1, 1.1])
     with runtime_cols[0]:
-        send_max_per_run = st.number_input("Plafond d'envoi / run", min_value=1, max_value=50, value=int(settings.SEND_MAX_PER_RUN), key="auto_cfg_send_cap")
+        send_max_per_run = st.number_input("Emails par vague", min_value=1, max_value=10, value=min(int(settings.SEND_MAX_PER_RUN), 3), key="auto_cfg_send_cap")
     with runtime_cols[1]:
-        send_delay_seconds = st.number_input("Delai entre envois", min_value=0.0, max_value=30.0, value=float(settings.SEND_DELAY_SECONDS), step=0.5, key="auto_cfg_send_delay")
-    with runtime_cols[2]:
-        candidate_multiplier = st.number_input("Profondeur de recherche", min_value=2, max_value=40, value=int(settings.AUTO_MODE_CONTACT_CANDIDATE_MULTIPLIER), key="auto_cfg_candidate_multiplier")
-    with runtime_cols[3]:
-        min_opportunity_score = st.number_input("Score d'opportunite mini", min_value=0, max_value=100, value=int(settings.AUTO_MODE_MIN_OPPORTUNITY_SCORE), key="auto_cfg_min_score")
-    config_action_cols = st.columns([1, 2])
-    with config_action_cols[0]:
         auto_enabled = st.checkbox("Mode auto actif", value=bool(status.get("enabled")), key="auto_cfg_enabled")
+    with runtime_cols[2]:
+        estimated_daily_volume = max(1, len(send_slots)) * int(send_max_per_run)
+        render_key_value_card(
+            "Rythme actif",
+            [
+                ("Moments choisis", ", ".join(send_slots) if send_slots else "Aucun"),
+                ("Emails par vague", str(int(send_max_per_run))),
+                ("Objectif par jour", str(estimated_daily_volume)),
+                ("Planning calcule", build_daily_cron(send_slots)),
+            ],
+        )
+    with st.expander("Reglages avances", expanded=False):
+        advanced_cols = st.columns(3)
+        with advanced_cols[0]:
+            send_delay_seconds = st.number_input("Delai entre envois", min_value=0.0, max_value=30.0, value=float(settings.SEND_DELAY_SECONDS), step=0.5, key="auto_cfg_send_delay")
+        with advanced_cols[1]:
+            candidate_multiplier = st.number_input("Profondeur de recherche", min_value=2, max_value=40, value=int(settings.AUTO_MODE_CONTACT_CANDIDATE_MULTIPLIER), key="auto_cfg_candidate_multiplier")
+        with advanced_cols[2]:
+            min_opportunity_score = st.number_input("Score d'opportunite mini", min_value=0, max_value=100, value=int(settings.AUTO_MODE_MIN_OPPORTUNITY_SCORE), key="auto_cfg_min_score")
+        st.caption("Le cron est maintenant calcule automatiquement a partir des moments d'envoi choisis.")
+    config_action_cols = st.columns([1, 2])
     with config_action_cols[1]:
-        if st.button("Enregistrer la configuration", use_container_width=True):
+        if st.button("Enregistrer la configuration", key="save_automation_config", use_container_width=True):
+            if not send_slots:
+                st.error("Choisis au moins un moment d'envoi.")
+                return
+            auto_cron = build_daily_cron(send_slots)
             settings.AUTO_MODE_LOCATIONS = auto_locations
             settings.AUTO_MODE_CATEGORIES = auto_categories
             settings.AUTO_MODE_LIMIT = int(auto_limit)
@@ -473,11 +580,11 @@ def render_manual_debug_mode():
 
         export_cols = st.columns(2)
         with export_cols[0]:
-            if st.button("Exporter CSV", use_container_width=True):
+            if st.button("Exporter CSV", key="export_csv_manual", use_container_width=True):
                 ExportService().export_leads("csv")
                 st.success("Export CSV cree.")
         with export_cols[1]:
-            if st.button("Exporter Excel", use_container_width=True):
+            if st.button("Exporter Excel", key="export_excel_manual", use_container_width=True):
                 ExportService().export_leads("xlsx")
                 st.success("Export Excel cree.")
 
@@ -540,7 +647,7 @@ def render_debug_tools():
 
     button_cols = st.columns(2)
     with button_cols[0]:
-        if st.button("Lancer le flux auto maintenant", use_container_width=True):
+        if st.button("Lancer le flux auto maintenant", key="run_auto_now_debug", use_container_width=True):
             summary = scheduler_service.run_auto_outreach_now(simulate=debug_run_dry)
             st.session_state["last_auto_outreach_summary"] = summary
             st.success(
@@ -550,7 +657,7 @@ def render_debug_tools():
                 f"skipped={summary.get('skipped', 0)} failed={summary.get('failed', 0)}"
             )
     with button_cols[1]:
-        if st.button("M'envoyer un email test", use_container_width=True):
+        if st.button("M'envoyer un email test", key="send_test_to_self_debug", use_container_width=True):
             prospects = get_prospects(has_email=True, send_status=None)
             if not prospects:
                 st.warning("Aucun lead avec email n'est disponible pour un auto-test.")
@@ -599,11 +706,11 @@ def render_search_section():
             reset_before_collect = st.checkbox("Vider les anciens leads avant collecte", value=settings.SEARCH_RESET_BEFORE_COLLECT)
     action_col1, action_col2, action_col3, _ = st.columns([1, 1, 1.2, 1.4])
     with action_col1:
-        collect_clicked = st.button("Collecter les leads", type="primary", use_container_width=True)
+        collect_clicked = st.button("Collecter les leads", key="collect_leads_manual", type="primary", use_container_width=True)
     with action_col2:
-        st.button("Generer", disabled=True, use_container_width=True)
+        st.button("Generer", key="generate_disabled_placeholder", disabled=True, use_container_width=True)
     with action_col3:
-        reset_clicked = st.button("Reinitialiser les leads / Vider la base", use_container_width=True)
+        reset_clicked = st.button("Reinitialiser les leads / Vider la base", key="reset_leads_database", use_container_width=True)
     if reset_clicked:
         deleted = LeadService().reset_leads(clear_search_history=True)
         st.success(f"Base videe. {deleted} leads supprimes.")
@@ -672,11 +779,11 @@ def render_lead_console():
         return [], []
     select_cols = st.columns(2)
     with select_cols[0]:
-        if st.button("Selectionner les leads avec email", use_container_width=True):
+        if st.button("Selectionner les leads avec email", key="select_leads_with_email", use_container_width=True):
             st.session_state["selected_lead_ids"] = [prospect.id for prospect in prospects if prospect.email]
             st.rerun()
     with select_cols[1]:
-        if st.button("Vider la selection", use_container_width=True):
+        if st.button("Vider la selection", key="clear_selected_leads", use_container_width=True):
             st.session_state["selected_lead_ids"] = []
             st.rerun()
     selected_ids = set(st.session_state.get("selected_lead_ids", []))
@@ -761,15 +868,15 @@ def render_send_panel(prospects, selected_prospects, current_prospect, current_s
     settings.AUTO_SEND_ENABLED = auto_send_enabled
     btns = st.columns(5)
     with btns[0]:
-        send_selected_clicked = st.button("Envoyer les emails selectionnes", use_container_width=True)
+        send_selected_clicked = st.button("Envoyer les emails selectionnes", key="send_selected_emails_bulk", use_container_width=True)
     with btns[1]:
-        send_top_clicked = st.button("Envoyer les emails prioritaires", use_container_width=True)
+        send_top_clicked = st.button("Envoyer les emails prioritaires", key="send_top_priority_emails", use_container_width=True)
     with btns[2]:
-        send_test_clicked = st.button("M'envoyer un email test", use_container_width=True)
+        send_test_clicked = st.button("M'envoyer un email test", key="send_test_to_self_panel", use_container_width=True)
     with btns[3]:
-        valid_email_clicked = st.button("Envoyer seulement les leads avec email valide", use_container_width=True)
+        valid_email_clicked = st.button("Envoyer seulement les leads avec email valide", key="send_valid_email_only", use_container_width=True)
     with btns[4]:
-        simulate_clicked = st.button("Simuler l'envoi", use_container_width=True)
+        simulate_clicked = st.button("Simuler l'envoi", key="simulate_send_panel", use_container_width=True)
     if valid_email_clicked:
         if not valid_email_send_ids:
             st.warning("Aucun lead eligible avec email valide ne correspond aux filtres.")

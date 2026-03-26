@@ -30,8 +30,8 @@ The production wrapper additionally forces safe rollout settings:
 
 - `AUTO_SEND_ENABLED=true`
 - `EMAIL_ONLY_OUTREACH=true`
-- `SEND_MAX_PER_RUN=5`
-- `SEND_BATCH_SIZE=5`
+- `SEND_MAX_PER_RUN=1`
+- `SEND_BATCH_SIZE=1`
 - `AUTO_MODE_REQUIRE_EMAIL_AND_PHONE=false`
 - mockup generation and Netlify deployment disabled
 
@@ -60,7 +60,7 @@ powershell.exe -ExecutionPolicy Bypass -File "C:\Users\kenam\Application-Projet-
 Create the production tasks with:
 
 - Trigger:
-  daily at `09:00` and `18:00`
+  daily at `09:00`, `13:00` and `18:00`
 - Action:
   start a program
 - Program/script:
@@ -82,7 +82,7 @@ Recommended options:
 
 Current recommended behavior:
 
-- if the PC is asleep at `09:00` or `18:00`, Task Scheduler can wake it to run the task
+- if the PC is asleep at `09:00`, `13:00` or `18:00`, Task Scheduler can wake it to run the task
 - if a scheduled start is missed, Windows should run it as soon as possible afterward
 - if the PC is completely powered off, nothing can run until Windows starts again
 - a separate logon catch-up script still exists as an extra safety net after sign-in
