@@ -71,7 +71,6 @@ class Settings:
     )
     AUTO_MODE_LIMIT: int = int(os.getenv("AUTO_MODE_LIMIT", 10))
     AUTO_MODE_LANGUAGE: str = os.getenv("AUTO_MODE_LANGUAGE", "fr")
-    AUTO_MODE_SMS_ENABLED: bool = os.getenv("AUTO_MODE_SMS_ENABLED", "true").lower() == "true"
     AUTO_MODE_REQUIRE_EMAIL_AND_PHONE: bool = os.getenv("AUTO_MODE_REQUIRE_EMAIL_AND_PHONE", "false").lower() == "true"
     AUTO_MODE_CONTACT_CANDIDATE_MULTIPLIER: int = int(os.getenv("AUTO_MODE_CONTACT_CANDIDATE_MULTIPLIER", 12))
     AUTO_MODE_MIN_OPPORTUNITY_SCORE: int = int(os.getenv("AUTO_MODE_MIN_OPPORTUNITY_SCORE", 70))
@@ -125,12 +124,6 @@ class Settings:
     SEND_DELAY_SECONDS: float = float(os.getenv("SEND_DELAY_SECONDS", 1.5))
     SEND_BATCH_SIZE: int = int(os.getenv("SEND_BATCH_SIZE", 5))
     SEND_ALLOW_RESEND: bool = os.getenv("SEND_ALLOW_RESEND", "false").lower() == "true"
-
-    # SMS sending
-    SMS_PROVIDER: str = os.getenv("SMS_PROVIDER", "").strip().lower()
-    SMS_API_KEY: str = os.getenv("SMS_API_KEY", "")
-    SMS_API_SECRET: str = os.getenv("SMS_API_SECRET", "")
-    SMS_FROM_NUMBER: str = os.getenv("SMS_FROM_NUMBER", "")
 
     def get_smtp_identity_warnings(self) -> list[str]:
         """Return warnings when SMTP sender settings drift from the configured professional email."""

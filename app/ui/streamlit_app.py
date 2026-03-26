@@ -491,8 +491,6 @@ def render_manual_debug_mode():
         notes_data = parse_notes(prospect.notes)
         lang = st.selectbox("Langue d'apercu", ["fr", "en"], index=0 if (prospect.email_language or "fr") == "fr" else 1)
         preview_assets = ["Email principal", "Email court", "Relance J+2", "Relance J+5", "Relance finale J+10"]
-        if not settings.EMAIL_ONLY_OUTREACH:
-            preview_assets.extend(["SMS", "Script d'appel", "Formulaire de contact", "DM reseaux sociaux"])
         outreach_asset = st.selectbox("Contenu a previsualiser", preview_assets)
         subject, body, html_body = build_outreach_preview(prospect, notes_data, lang, outreach_asset)
 
@@ -517,8 +515,6 @@ def render_manual_debug_mode():
             if html_body:
                 with st.expander("Apercu HTML", expanded=False):
                     components.html(html_body, height=520, scrolling=True)
-        render_alternative_outreach_panel(prospect, notes_data)
-
         render_section("Envoi manuel", "Controles d'envoi cible", "Les actions d'envoi manuel restent disponibles ici pour les tests isoles.")
         render_send_panel(prospects, selected_prospects, prospect, subject, body, html_body)
 
@@ -851,36 +847,7 @@ def render_send_panel(prospects, selected_prospects, current_prospect, current_s
                 review_btn = st.button("Marquer revise", key=f"review_{prospect.id}", use_container_width=True)
             with action_cols[5]:
                 contact_btn = st.button("Marquer contacte", key=f"contact_{prospect.id}", use_container_width=True)
-            if settings.EMAIL_ONLY_OUTREACH:
-                st.caption("Les actions de repli sont masquees car le mode autonome est actuellement email-only.")
-            else:
-                fallback_cols = st.columns(6)
-                with fallback_cols[0]:
-                    render_copy_text_button(notes.get("sms_message", notes.get("sms", "")) or "SMS indisponible", f"sms_{prospect.id}", label="Copier le SMS")
-                with fallback_cols[1]:
-                    render_copy_text_button(notes.get("call_script", "") or "Script d'appel indisponible", f"call_{prospect.id}", label="Copier le script d'appel")
-                with fallback_cols[2]:
-                    if notes.get("contact_form_url"):
-                        st.link_button("Ouvrir le formulaire", notes.get("contact_form_url"), use_container_width=True)
-                    else:
-                        st.button("Ouvrir le formulaire", key=f"contact_form_missing_{prospect.id}", disabled=True, use_container_width=True)
-                with fallback_cols[3]:
-                    if notes.get("instagram_url"):
-                        st.link_button("Ouvrir Instagram", notes.get("instagram_url"), use_container_width=True)
-                    else:
-                        st.button("Ouvrir Instagram", key=f"instagram_missing_{prospect.id}", disabled=True, use_container_width=True)
-                with fallback_cols[4]:
-                    if notes.get("facebook_url"):
-                        st.link_button("Ouvrir Facebook", notes.get("facebook_url"), use_container_width=True)
-                    else:
-                        st.button("Ouvrir Facebook", key=f"facebook_missing_{prospect.id}", disabled=True, use_container_width=True)
-                with fallback_cols[5]:
-                    render_copy_text_button(notes.get("social_dm_message", "") or "DM indisponible", f"dm_{prospect.id}", label="Copier le DM")
-                with st.expander("Messages de repli prepares", expanded=False):
-                    st.text_area("SMS", value=notes.get("sms_message", notes.get("sms", "")), height=90, key=f"sms_preview_{prospect.id}")
-                    st.text_area("Script d'appel", value=notes.get("call_script", ""), height=180, key=f"call_preview_{prospect.id}")
-                    st.text_area("Message formulaire", value=notes.get("contact_form_message", ""), height=140, key=f"form_preview_{prospect.id}")
-                    st.text_area("DM reseaux sociaux", value=notes.get("social_dm_message", ""), height=120, key=f"dm_preview_{prospect.id}")
+            st.caption("Mode email-only actif : aucun canal alternatif n'est propose dans le produit actuel.")
             if preview_btn:
                 st.session_state["preview_prospect_id"] = prospect.id
                 st.rerun()
@@ -1016,48 +983,8 @@ def apply_channel_filters(prospects, *, phone_available: bool, contact_form_avai
 
 
 def render_alternative_outreach_panel(prospect, notes_data: dict):
-    render_section("Canaux de repli", "Canaux alternatifs", "Utilise le meilleur canal de secours quand aucun email n'est disponible.")
-    if settings.EMAIL_ONLY_OUTREACH:
-        st.info("Le mode email-only est actif. Les leads sans email sont ignores en mode autonome.")
-        return
-    render_key_value_card("Routage canal", [
-        ("Canal recommande", display_channel(notes_data.get("recommended_channel", "unavailable"))),
-        ("Strategie de contact", notes_data.get("contact_strategy", "unavailable")),
-        ("CTA recommande", notes_data.get("recommended_cta", "N/A")),
-        ("Raison absence email", notes_data.get("email_unavailable_reason", "N/A")),
-        ("Telephone", prospect.phone or "N/A"),
-        ("Formulaire", notes_data.get("contact_form_url", "N/A")),
-        ("Instagram", notes_data.get("instagram_url", "N/A")),
-        ("Facebook", notes_data.get("facebook_url", "N/A")),
-        ("WhatsApp", notes_data.get("whatsapp_url", "N/A")),
-    ])
-    action_cols = st.columns(6)
-    with action_cols[0]:
-        render_copy_text_button(notes_data.get("sms_message", notes_data.get("sms", "")) or "SMS indisponible", f"alt_sms_{prospect.id}", label="Copier le SMS")
-    with action_cols[1]:
-        render_copy_text_button(notes_data.get("call_script", "") or "Script d'appel indisponible", f"alt_call_{prospect.id}", label="Copier le script d'appel")
-    with action_cols[2]:
-        if notes_data.get("contact_form_url"):
-            st.link_button("Ouvrir le formulaire", notes_data.get("contact_form_url"), use_container_width=True)
-        else:
-            st.button("Ouvrir le formulaire", key=f"alt_form_missing_{prospect.id}", disabled=True, use_container_width=True)
-    with action_cols[3]:
-        if notes_data.get("instagram_url"):
-            st.link_button("Ouvrir Instagram", notes_data.get("instagram_url"), use_container_width=True)
-        else:
-            st.button("Ouvrir Instagram", key=f"alt_instagram_missing_{prospect.id}", disabled=True, use_container_width=True)
-    with action_cols[4]:
-        if notes_data.get("facebook_url"):
-            st.link_button("Ouvrir Facebook", notes_data.get("facebook_url"), use_container_width=True)
-        else:
-            st.button("Ouvrir Facebook", key=f"alt_facebook_missing_{prospect.id}", disabled=True, use_container_width=True)
-    with action_cols[5]:
-        render_copy_text_button(notes_data.get("social_dm_message", "") or "DM indisponible", f"alt_dm_{prospect.id}", label="Copier le DM")
-    with st.expander("Messages de repli prepares", expanded=False):
-        st.text_area("SMS prepare", value=notes_data.get("sms_message", notes_data.get("sms", "")), height=90, key=f"alt_sms_preview_{prospect.id}")
-        st.text_area("Script d'appel prepare", value=notes_data.get("call_script", ""), height=180, key=f"alt_call_preview_{prospect.id}")
-        st.text_area("Message formulaire prepare", value=notes_data.get("contact_form_message", ""), height=130, key=f"alt_form_preview_{prospect.id}")
-        st.text_area("DM prepare", value=notes_data.get("social_dm_message", ""), height=120, key=f"alt_dm_preview_{prospect.id}")
+    render_section("Canaux de repli", "Canaux alternatifs", "Le produit actuel ne propose plus de fallback manuel en dehors de l'email.")
+    st.info("Mode email-only actif : si aucun email n'est disponible, le lead est ignore.")
 
 
 def build_outreach_preview(prospect, notes_data: dict, lang: str, outreach_asset: str) -> tuple[str, str, str]:
@@ -1088,22 +1015,6 @@ def build_outreach_preview(prospect, notes_data: dict, lang: str, outreach_asset
         follow_up = notes_data.get("follow_ups_fr", {}) if lang == "fr" else notes_data.get("follow_ups_en", {})
         subject = follow_up.get("day_10", {}).get("subject", subject)
         body = follow_up.get("day_10", {}).get("body", body)
-        html_body = ""
-    elif outreach_asset == "SMS":
-        subject = "SMS"
-        body = notes_data.get("sms_message", notes_data.get("sms", "SMS non genere"))
-        html_body = ""
-    elif outreach_asset == "Script d'appel":
-        subject = "Script d'appel"
-        body = notes_data.get("call_script", "Script d'appel non genere")
-        html_body = ""
-    elif outreach_asset == "Formulaire de contact":
-        subject = "Formulaire de contact"
-        body = notes_data.get("contact_form_message", "Message formulaire non genere")
-        html_body = ""
-    elif outreach_asset == "DM reseaux sociaux":
-        subject = notes_data.get("preferred_social_channel", "social") or "social"
-        body = notes_data.get("social_dm_message", "DM reseaux sociaux non genere")
         html_body = ""
     return subject, body, html_body
 

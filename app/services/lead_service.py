@@ -29,7 +29,6 @@ from app.services.osm_provider import OSMProvider
 from app.services.serpapi_provider import SerpApiProvider
 from app.services.simple_provider import SimpleProvider
 from app.services.site_analyzer import SiteAnalyzer
-from app.services.sms_sender import SMSSender
 
 
 class LeadService:
@@ -60,7 +59,6 @@ class LeadService:
         self.mockup_generator = MockupGenerator()
         self.netlify_deployer = NetlifyDeployer()
         self.netlify_preparer = NetlifyPreparer()
-        self.sms_sender = SMSSender()
 
     def reset_leads(self, clear_search_history: bool = True) -> int:
         """Clear stored leads and optionally search history."""
@@ -242,8 +240,6 @@ class LeadService:
         """Return a lightweight configuration snapshot before one-shot auto runs."""
         warnings = list(settings.get_smtp_identity_warnings())
         smtp_ready = self.email_sender.is_configured()
-        sms_ready = self.sms_sender.is_configured()
-        sms_enabled = settings.AUTO_MODE_SMS_ENABLED and not settings.EMAIL_ONLY_OUTREACH
         require_full_contact = settings.AUTO_MODE_REQUIRE_EMAIL_AND_PHONE
         generate_mockups = self._should_generate_mockups(auto_mode=True)
         deploy_mockups = self._should_deploy_mockups(auto_mode=True)
@@ -270,13 +266,10 @@ class LeadService:
             "priority_niches_enabled": settings.PRIORITY_NICHES_ENABLED,
             "smtp_ready": smtp_ready,
             "email_only_outreach": settings.EMAIL_ONLY_OUTREACH,
-            "sms_enabled": sms_enabled,
             "min_opportunity_score": settings.AUTO_MODE_MIN_OPPORTUNITY_SCORE,
             "require_full_contact": require_full_contact,
             "contact_candidate_multiplier": settings.AUTO_MODE_CONTACT_CANDIDATE_MULTIPLIER,
             "send_max_per_run": settings.SEND_MAX_PER_RUN,
-            "sms_ready": sms_ready,
-            "sms_provider": settings.SMS_PROVIDER or "",
             "generate_mockups": generate_mockups,
             "deploy_mockups": deploy_mockups,
             "warnings": warnings,
@@ -1424,7 +1417,7 @@ class LeadService:
         simulated: bool,
         error: str,
     ) -> None:
-        """Persist send outcomes for automatic email/SMS outreach."""
+        """Persist send outcomes for automatic email outreach."""
         now = datetime.now(timezone.utc).replace(tzinfo=None)
         prospect.selected_outreach_channel = channel
         prospect.last_attempt_at = now

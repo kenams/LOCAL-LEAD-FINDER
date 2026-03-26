@@ -32,7 +32,6 @@ The production wrapper additionally forces safe rollout settings:
 - `EMAIL_ONLY_OUTREACH=true`
 - `SEND_MAX_PER_RUN=5`
 - `SEND_BATCH_SIZE=5`
-- `AUTO_MODE_SMS_ENABLED=false`
 - `AUTO_MODE_REQUIRE_EMAIL_AND_PHONE=false`
 - mockup generation and Netlify deployment disabled
 
@@ -110,7 +109,7 @@ Before enabling the task, verify:
 - `AUTO_MODE_GENERATE_MOCKUPS=false` unless you explicitly want local mockups during auto mode
 - `AUTO_MODE_DEPLOY_MOCKUPS=false` unless you explicitly want Netlify deployment during auto mode
 
-Each one-shot run prints a compact preflight summary into the console and the per-run log file. This makes scheduled-mode diagnosis easier when SMTP, SMS, or mockup deployment are not ready yet.
+Each one-shot run prints a compact preflight summary into the console and the per-run log file. This makes scheduled-mode diagnosis easier when SMTP or mockup deployment are not ready yet.
 
 ## Output locations
 

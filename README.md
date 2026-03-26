@@ -1,132 +1,143 @@
-# Local Lead Finder
+# LOCAL LEAD FINDER
 
-Un outil automatisé pour trouver des prospects locaux potentiels pour des refontes de sites web de petites entreprises.
+Machine de prospection autonome orientee qualite.
 
-## Fonctionnalités
+Le produit est maintenant centre sur un flux simple :
 
-- Recherche automatique de prospects dans plusieurs localisations
-- Analyse heuristique des sites web
-- Extraction automatique des contacts (email, téléphone)
-- Estimation de faisabilité et prix
-- Génération d'emails de prospection personnalisés (FR/EN)
-- Export CSV/XLSX
-- Interface web simple avec Streamlit
-- Planification automatique des recherches
-- Architecture modulaire avec providers interchangeables
+`SEARCH -> ANALYSE -> EMAIL -> REPORT`
+
+Le mode de production actuel est `email-only`.
+Si un lead n'a pas d'email exploitable, il est ignore.
+
+## Ce que fait le programme
+
+- recherche des leads par zones et categories
+- enrichit les sites et extrait les emails
+- filtre les leads faibles
+- score les opportunites
+- choisit l'offre la plus adaptee :
+  - `landing page`
+  - `site vitrine`
+- genere les emails automatiquement
+- envoie les emails en mode autonome
+- enregistre les rapports et les logs
+
+## Interface
+
+L'interface Streamlit sert surtout de moniteur d'automatisation :
+
+- statut de l'automatisation
+- prochain run
+- dernier run
+- rapports
+- logs
+- suivi business
+- mode debug secondaire
+
+## Lancement rapide
+
+### Interface web
+
+```powershell
+python run.py --ui
+```
+
+### Run autonome one-shot
+
+```powershell
+python run.py --auto-outreach
+```
+
+### Dry run
+
+```powershell
+python run.py --auto-outreach --dry-run
+```
+
+### Diagnostic SMTP
+
+```powershell
+python run.py --check-smtp
+```
 
 ## Installation
 
-1. Cloner le projet
-2. Créer un environnement virtuel :
-   ```bash
-   python -m venv venv
-   venv\Scripts\activate  # Windows
-   ```
-3. Installer les dépendances :
-   ```bash
-   pip install -r requirements.txt
-   ```
-4. Copier le fichier d'environnement :
-   ```bash
-   cp .env.example .env
-   ```
-5. Initialiser la base de données :
-   ```bash
-   python run.py --init-db
-   ```
+1. Creer un environnement virtuel
 
-## Configuration
-
-Éditer le fichier `.env` pour configurer :
-- Clés API (optionnelles)
-- Paramètres par défaut
-- Chemins de logs et exports
-
-## Lancement
-
-### Interface Web
-```bash
-python run.py --ui
-```
-Accéder à http://localhost:8501
-
-### Collecte manuelle
-```bash
-python run.py --collect --locations "Toulouse,Montpellier" --categories "coiffeur,plombier" --limit 5 --lang fr
+```powershell
+python -m venv venv
+venv\Scripts\activate
 ```
 
-### Génération d'emails
-```bash
-python run.py --generate-emails
+2. Installer les dependances
+
+```powershell
+pip install -r requirements.txt
 ```
 
-### Export
-```bash
-python run.py --export csv
-python run.py --export xlsx
+3. Copier la config
+
+```powershell
+copy .env.example .env
 ```
 
-### Mode automatique (scheduler)
-```bash
-python run.py
+4. Initialiser la base
+
+```powershell
+python run.py --init-db
 ```
 
-## Structure du projet
+## Configuration importante
 
-```
-/app
-  /api          # Endpoints FastAPI
-  /core         # Configuration et settings
-  /db           # Gestion base de données
-  /models       # Modèles SQLAlchemy
-  /schemas      # Schémas Pydantic
-  /services     # Logique métier
-  /integrations # Intégrations externes (Netlify placeholder)
-  /templates    # Templates d'emails
-  /utils        # Utilitaires
-/tests          # Tests unitaires
-/data           # Base de données SQLite
-/exports        # Exports CSV/XLSX
-/logs           # Logs
-```
+Dans `.env`, verifier surtout :
 
-## Providers
+- `AUTO_MODE_ENABLED`
+- `AUTO_MODE_CRON`
+- `AUTO_MODE_LOCATIONS`
+- `AUTO_MODE_CATEGORIES`
+- `AUTO_MODE_LIMIT`
+- `AUTO_SEND_ENABLED`
+- `EMAIL_ONLY_OUTREACH`
+- `SMTP_HOST`
+- `SMTP_PORT`
+- `SMTP_USERNAME`
+- `SMTP_PASSWORD`
+- `SMTP_FROM_EMAIL`
 
-Le système utilise une architecture provider-based :
+## Production Windows
 
-- **SimpleProvider** : Recherche via moteur de recherche classique (fallback)
-- **SerpApiProvider** : Via SerpApi (nécessite clé)
-- **ApifyProvider** : Via Apify (nécessite token)
-- **ManualProvider** : Import CSV manuel
+Le mode recommande en production est :
 
-## Estimation et Scoring
+`Windows Task Scheduler -> wrapper PowerShell -> one-shot auto outreach -> exit`
 
-- **Site Quality Score** : Analyse heuristique du site (0-100)
-- **Opportunity Score** : Potentiel de conversion (0-100)
-- **Faisabilité** : EASY/MEDIUM/ADVANCED
-- **Prix estimé** : Fourchette basée sur complexité
+Voir le guide :
+
+- `WINDOWS_TASK_SCHEDULER.md`
+
+Wrappers disponibles :
+
+- `scripts/run_auto_outreach.ps1`
+- `scripts/run_auto_outreach_prod.ps1`
 
 ## Tests
 
-```bash
+```powershell
 pytest tests/
 ```
 
-## Limites et Éthique
+## Structure utile
 
-- Respecter les CGU des sources utilisées
-- Vérification humaine avant envoi d'emails
-- Éviter l'envoi massif non contrôlé
-- Usage professionnel uniquement
+- `run.py` : entree principale CLI
+- `app/services/lead_service.py` : orchestration principale
+- `app/services/email_generator.py` : generation des offres et emails
+- `app/services/email_sender.py` : envoi SMTP
+- `app/services/scheduler_service.py` : etat de planification
+- `app/ui/streamlit_app.py` : interface de monitoring
 
-## Évolutions possibles
+## Etat actuel
 
-- Intégration Netlify pour déploiement automatique
-- Plus de providers (Google Maps API, etc.)
-- Analyse IA du design
-- Intégration CRM
-- Dashboard analytics
-
-## Support
-
-Pour les questions, créer une issue sur le repository.
+- mode autonome stable
+- envoi email actif
+- SMS retire du flux produit actuel
+- Streamlit francise
+- taches Windows prêtes
