@@ -1,0 +1,70 @@
+name: KAH Digital — Prospection Email Autonome
+
+on:
+  schedule:
+    - cron: '0 9  * * 1-5'   # 09:00 UTC = 11:00 FR (lun-ven)
+    - cron: '0 14 * * 1-5'   # 14:00 UTC = 16:00 FR (lun-ven)
+  workflow_dispatch:
+
+jobs:
+  outreach:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout (avec DB)
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements_cloud.txt
+
+      - name: Init DB
+        run: |
+          mkdir -p data
+          python -c "
+          import sys; sys.path.insert(0, '.')
+          from app.db.session import init_db
+          init_db()
+          print('DB initialisee')
+          "
+
+      - name: Run auto outreach
+        env:
+          DATABASE_URL: sqlite:///./data/local_lead_finder.db
+          SMTP_HOST: smtp.gmail.com
+          SMTP_PORT: "587"
+          SMTP_USE_TLS: "true"
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_FROM_EMAIL: ${{ secrets.SMTP_USERNAME }}
+          SMTP_FROM_NAME: "Kenams — KAH.DIGITAL"
+          AUTO_SEND_ENABLED: "true"
+          AUTO_MODE_ENABLED: "true"
+          EMAIL_ONLY_OUTREACH: "true"
+          SEND_MAX_PER_RUN: "15"
+          SEND_BATCH_SIZE: "5"
+          SEND_DELAY_SECONDS: "2"
+          AUTO_MODE_LIMIT: "12"
+          AUTO_MODE_MIN_OPPORTUNITY_SCORE: "75"
+          AUTO_MODE_CONTACT_CANDIDATE_MULTIPLIER: "16"
+          AUTO_MODE_ROTATION_CONFIGS: ${{ secrets.AUTO_MODE_ROTATION_CONFIGS }}
+          NETLIFY_TOKEN: ${{ secrets.NETLIFY_TOKEN }}
+          SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }}
+          ENABLE_SCHEDULER: "false"
+        run: python run.py --auto-outreach
+
+      - name: Commit DB mise à jour
+        run: |
+          git config user.name "kah-bot"
+          git config user.email "kahdigital42@gmail.com"
+          git add data/local_lead_finder.db || true
+          git diff --staged --quiet || git commit -m "chore: update outreach DB [skip ci]"
+          git push || true

@@ -72,6 +72,36 @@ COUNTRY_PROFILES: Dict[str, CountryProfile] = {
         price_ranges={"EASY": (900, 1400), "MEDIUM": (1700, 2600), "ADVANCED": (3000, 4600)},
         country_value_weight=1.15,
     ),
+    "AE": CountryProfile(
+        code="AE",
+        name="United Arab Emirates",
+        default_language="en",
+        currency="AED",
+        currency_symbol="AED",
+        messaging_style="direct_business",
+        price_ranges={"EASY": (3500, 5500), "MEDIUM": (6000, 9500), "ADVANCED": (10000, 18000)},
+        country_value_weight=1.8,
+    ),
+    "SG": CountryProfile(
+        code="SG",
+        name="Singapore",
+        default_language="en",
+        currency="SGD",
+        currency_symbol="SGD",
+        messaging_style="direct_business",
+        price_ranges={"EASY": (1300, 2000), "MEDIUM": (2400, 3800), "ADVANCED": (4200, 7000)},
+        country_value_weight=1.5,
+    ),
+    "CA": CountryProfile(
+        code="CA",
+        name="Canada",
+        default_language="en",
+        currency="CAD",
+        currency_symbol="CAD",
+        messaging_style="friendly_professional",
+        price_ranges={"EASY": (1200, 1900), "MEDIUM": (2200, 3500), "ADVANCED": (4000, 6500)},
+        country_value_weight=1.3,
+    ),
 }
 
 
@@ -81,6 +111,9 @@ LOCATION_COUNTRY_MAP = {
     "US": {"new york", "nyc", "miami", "dallas", "los angeles", "la", "chicago", "houston", "phoenix", "san francisco", "boston", "seattle"},
     "AU": {"sydney", "melbourne", "brisbane", "perth", "adelaide", "gold coast", "canberra"},
     "GB": {"london", "manchester", "birmingham", "liverpool", "leeds", "glasgow"},
+    "AE": {"dubai", "abu dhabi", "sharjah", "ajman", "uae"},
+    "SG": {"singapore"},
+    "CA": {"toronto", "montreal", "vancouver", "calgary", "ottawa"},
 }
 
 SWISS_ENGLISH_FALLBACK_CITIES = {"zurich", "zuerich", "basel", "bern", "lucerne"}
@@ -115,7 +148,7 @@ def resolve_email_language(location: str, country_code: str | None, fallback_lan
 
     if code == "CH":
         return "en" if any(city in normalized for city in SWISS_ENGLISH_FALLBACK_CITIES) else "fr"
-    if code in {"US", "AU", "GB"}:
+    if code in {"US", "AU", "GB", "AE", "SG", "CA"}:
         return "en"
     if code == "FR":
         return "fr"

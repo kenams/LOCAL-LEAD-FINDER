@@ -8,7 +8,6 @@ __pycache__/
 .coverage
 htmlcov/
 
-data/*.db
 logs/
 exports/
 reports/
@@ -18,5 +17,3 @@ streamlit_stderr.log
 *.pyc
 *.pyo
 *.pyd
-*.sqlite
-*.sqlite3
